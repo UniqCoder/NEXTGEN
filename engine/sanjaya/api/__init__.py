@@ -49,6 +49,15 @@ def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None):
         try:
             recipe, log = blind_search(x, fs_, on_step)
         except SearchError as e:
+            from .scenario import build_partial
+            suffix = job.path.suffix.lower()
+            meta = {"name": job.name, "path": str(job.path), "size": job.path.stat().st_size, "sha256": sha,
+                    "format": {".wav": "WAV", ".sigmf-data": "SigMF"}.get(suffix, "Raw IQ") + (f" · {dtype}" if dtype else ""),
+                    "route": "wav" if suffix == ".wav" else "iq",
+                    "forensics": [{"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": ""},
+                                  {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
+                                  {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": ""}]}
+            job.result = build_partial(x, fs_, meta, str(e))
             job.state, job.error = "undecided", str(e)
             job.stages = ["failed" if v == "running" else v for v in job.stages]
             return
@@ -78,7 +87,8 @@ def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None):
         job.stages = ["failed" if v == "running" else v for v in job.stages]
 
 
-def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None, dev: bool = False) -> FastAPI:
+def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None, dev: bool = False,
+               samples_dir: Path | None = None) -> FastAPI:
     app = FastAPI(title="SANJAYA engine", version=__version__, docs_url=None, redoc_url=None)
     jobs: dict[str, Job] = {}
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -115,12 +125,29 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
     def health():
         return {"engine_version": __version__, "kernels": BACKEND, "jobs": len(jobs)}
 
+    @app.get("/v1/samples")
+    def samples():
+        manifest = samples_dir / "manifest.json" if samples_dir else None
+        if not manifest or not manifest.is_file():
+            return []
+        return json.loads(manifest.read_text(encoding="utf-8"))
+
     @app.post("/v1/jobs")
     async def create_job(request: Request, name: str, fs: float | None = None, dtype: str | None = None,
-                         fc_hz: float | None = None, path: str | None = None, sigmf: str | None = None):
-        """Browser mode uploads the bytes (body); desktop mode passes ?path= to a local file."""
+                         fc_hz: float | None = None, path: str | None = None, sigmf: str | None = None,
+                         sample: str | None = None):
+        """Browser mode uploads the bytes (body); desktop mode passes ?path= to a local file;
+        ?sample= runs one of the built-in demo recordings (engine/samples/manifest.json)."""
         jid = uuid.uuid4().hex[:12]
-        if path:
+        if sample:
+            if not samples_dir:
+                raise HTTPException(404, "no sample library configured")
+            manifest = json.loads((samples_dir / "manifest.json").read_text(encoding="utf-8"))
+            item = next((s for s in manifest if s["id"] == sample), None)
+            if item is None:
+                raise HTTPException(404, "no such sample")
+            src, name = samples_dir / item["file"], item["name"]
+        elif path:
             src = Path(path)
             if not src.is_file():
                 raise HTTPException(400, "path is not a file")

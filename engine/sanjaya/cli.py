@@ -80,7 +80,8 @@ def _serve(a):
     from .api import create_app
     token = a.token or secrets.token_urlsafe(18)
     ui = Path(a.ui) if a.ui else Path(__file__).resolve().parents[2] / "ui" / "dist"
-    app = create_app(token, a.port, Path(a.work), ui, dev=a.dev)
+    samples = Path(__file__).resolve().parents[1] / "samples"
+    app = create_app(token, a.port, Path(a.work), ui, dev=a.dev, samples_dir=samples if samples.is_dir() else None)
     url = f"http://127.0.0.1:{a.port}/?token={token}"
     print(f"SANJAYA engine on 127.0.0.1:{a.port} (UI: {ui if ui.is_dir() else 'not built'})")
     print(f"  open {url}")
