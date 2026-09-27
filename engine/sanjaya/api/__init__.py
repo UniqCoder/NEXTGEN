@@ -25,6 +25,7 @@ class Job:
     log: list[dict] = field(default_factory=list)
     result: dict | None = None
     cert: dict | None = None
+    package: bytes | None = None             # the Recipe Compiler's zip, released only if its gate passed
     started: float = field(default_factory=time.time)
 
 
@@ -94,6 +95,20 @@ def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None, mem
         res["scenario"]["view"].update(extra)
         res["scenario"]["cert"].update({"key": f"ed25519:{job.cert.get('key_id')}", "sig": (job.cert.get("signature") or "UNSIGNED")[:12] + "…",
                                         "issued": job.cert["issued_utc"]})
+        # Recipe Compiler: a receiver for the designated sensors, released only if it reproduces our bits exactly
+        from ..compiler import compile_package, receiver_source, run_receiver
+        raw = path.suffix.lower() not in (".wav", ".sigmf-data")
+        job.package, gate = compile_package(recipe, job.cert, res["scenario"]["cert"]["id"], path, x, sha,
+                                            fs_ if raw else None, dtype if raw else None)
+        if members and job.package:                                  # the same receiver on the other sensors' files
+            src = receiver_source(recipe, res["scenario"]["cert"]["id"])
+            gate["other_sensors"] = []
+            for (p_i, label), s_i in zip(members, extra["stitch"]["sensors"]):
+                if p_i != path and s_i.get("consistent"):
+                    got, _, err = run_receiver(src, p_i)
+                    gate["other_sensors"].append({"name": label, "frames": len(got), "crc_ok": sum(1 for g in got if g["crc_ok"]),
+                                                  "error": err})
+        res["scenario"]["view"]["compiler"] = gate
         job.result = res
         job.stages[:6] = ["done"] * 6
         job.state = "done"
@@ -213,6 +228,14 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         a = np.ascontiguousarray(j.result["spectrogram"][kind], np.float32)
         return Response(a.tobytes(), media_type="application/octet-stream",
                         headers={"X-Rows": str(a.shape[0]), "X-Bins": str(a.shape[-1] if a.ndim == 2 else 1)})
+
+    @app.get("/v1/jobs/{jid}/receiver.zip")
+    def receiver_zip(jid: str):
+        j = job_or_404(jid)
+        if not j.package:
+            raise HTTPException(409, "no receiver released for this job (not decoded, or the release gate failed)")
+        return Response(j.package, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="sanjaya-receiver-{jid}.zip"'})
 
     @app.get("/v1/jobs/{jid}/certificate.json")
     def certificate(jid: str):

@@ -160,3 +160,15 @@ export function engineDtype(dtype: string, endian: 'LE' | 'BE') {
   const le = endian === 'LE' ? '_le' : '_be'
   return { cf32: 'cf32' + le, ci16: 'ci16' + le, ci8: 'ci8', cu8: 'cu8' }[dtype] ?? dtype
 }
+
+/** USP 4: the Recipe Compiler's package (standalone receiver + recipe + GNU Radio flowgraph), released only when its
+ * bit-exact gate passed. */
+export async function downloadReceiver() {
+  if (!ENGINE.job) return
+  const blob = await (await api(`/v1/jobs/${ENGINE.job}/receiver.zip`)).blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `sanjaya-receiver-${ENGINE.job}.zip`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}

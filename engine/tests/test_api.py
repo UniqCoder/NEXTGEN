@@ -86,3 +86,15 @@ def test_undecided_job_returns_partial_scenario(tmp_path):
     sp = c.get(f"/v1/jobs/{jid}/spectrogram/full", headers=H)
     assert int(sp.headers["x-rows"]) * int(sp.headers["x-bins"]) * 4 == len(sp.content)
     assert c.get(f"/v1/jobs/{jid}/certificate.json", headers=H).status_code == 409
+
+
+def test_decoded_job_releases_a_gated_receiver(tmp_path):
+    x, r, truth, _ = generate(seed=3, esn0_db=11.0)
+    data = write_sigmf(tmp_path / "rec", x, r.sample_rate_hz)
+    c = client(tmp_path)
+    jid = c.post(f"/v1/jobs?name=rec.sigmf-data&path={data}", headers=H).json()["id"]
+    assert wait(c, jid)["state"] == "done"
+    gate = c.get(f"/v1/jobs/{jid}/scenario", headers=H).json()["scenario"]["view"]["compiler"]
+    assert gate["passed"] and gate["frames_equal"] == truth["n_frames"]
+    z = c.get(f"/v1/jobs/{jid}/receiver.zip", headers=H)
+    assert z.status_code == 200 and z.content[:2] == b"PK"
