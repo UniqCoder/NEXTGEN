@@ -45,6 +45,13 @@
 - Ambiguity handling that mattered (keep): sync-marker extent decided by block-edge parity checks; I/Q-swap code twins carried as hypotheses; transparent-code complement twins broken by structure (counter direction, termination).
 - 30 tests (`scripts/check.py`, ~80 s).
 
+## Engine ↔ UI (commit e71e828)
+- **Run the product:** `cd ui && npm run build`, then `cd engine && python -m sanjaya serve --open` → browser opens `http://127.0.0.1:8765/?token=…`; drop a .sigmf-data (+ .sigmf-meta) / .wav / raw IQ → Autopilot runs the engine → every page shows this recording's results; P = proof; certificate is the signed one.
+- Without a token (or engine) the UI runs the demo scenario exactly as before.
+- API: `/v1/health`, `POST /v1/jobs`, `/v1/jobs/{id}`, `/scenario`, `/spectrogram/{full|resid|fail|rowPower}`, `/certificate.json`. Token header, Host check, Origin allowlist (`--dev` adds the Vite origin).
+- Verified in Chrome end to end (drop → blind decode → proof residual at noise floor → signed certificate).
+- Known UI gaps: the in-browser triage heuristic (`triage.ts`) mislabels the Gen QPSK file as voice before the engine runs (R-15); Eye / FSK views are still demo drawings; Scene / Genome show engine emitters only (multi-emitter R-17 and genome D5 not built); job worker is a thread, not the PRD's per-job process with memory cap.
+
 ## Next actions
 1. **Remaining G1 items:** C++ Viterbi within 0.2 dB of oracle (needs toolchain above); Gen v1 taps (clock drift, more mods); FastAPI + UI adapter + visual-regression baseline; Tauri sidecar freeze spike; E1 + E3 v0; sealed-set seed hashes.
 2. **G2 path (critical):** blind conv-code + block/conv interleaver ID (GF(2) rank from `_build/feasibility.py`), orchestrator v1, proof calibration on Tiers 1-2, QAM/OQPSK.
