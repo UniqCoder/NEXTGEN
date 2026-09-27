@@ -172,3 +172,21 @@ export async function downloadReceiver() {
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+export interface VerifyResult {
+  reproduced: boolean; problems: string[]; certificate_id: string; verdict: string | null; signature: string
+}
+
+/** Independent re-check ("sanjaya verify"): a certificate.json + its recording, re-derived from the file
+ * and the certified recipe alone, no search. sigmfMeta: the .sigmf-meta sidecar's text, if the recording is
+ * a bare .sigmf-data file. fs/dtype: only needed for headerless raw IQ. */
+export async function verifyCertificate(certificate: File, recording: File,
+                                        opts: { sigmfMeta?: string; fs?: number; dtype?: string } = {}): Promise<VerifyResult> {
+  const form = new FormData()
+  form.set('certificate', certificate)
+  form.set('recording', recording)
+  if (opts.sigmfMeta) form.set('sigmf', opts.sigmfMeta)
+  if (opts.fs) form.set('fs', String(opts.fs))
+  if (opts.dtype) form.set('dtype', opts.dtype)
+  return (await api('/v1/verify', { method: 'POST', body: form })).json()
+}

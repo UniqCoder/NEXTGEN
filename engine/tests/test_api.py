@@ -1,11 +1,14 @@
 """Engine API: security rules (PRD §6.8, §12.2) and a full blind job producing UI-shaped data."""
+import json
 import time
 from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 from sanjaya.api import create_app
 from sanjaya.gen import generate
-from sanjaya.io import write_sigmf
+from sanjaya.io import write_sigmf, sha256_file
+from sanjaya.search import blind_search
+from sanjaya.proof.certificate import build_body, sign
 
 TOKEN, PORT = "t0k", 8765
 H = {"host": f"127.0.0.1:{PORT}", "x-sanjaya-token": TOKEN}
@@ -98,3 +101,33 @@ def test_decoded_job_releases_a_gated_receiver(tmp_path):
     assert gate["passed"] and gate["frames_equal"] == truth["n_frames"]
     z = c.get(f"/v1/jobs/{jid}/receiver.zip", headers=H)
     assert z.status_code == 200 and z.content[:2] == b"PK"
+
+
+def test_verify_endpoint_reproduces_tamper_and_wrong_file(tmp_path):
+    x, r, truth, _ = generate(seed=5, esn0_db=11.0)
+    data = write_sigmf(tmp_path / "rec", x, r.sample_rate_hz)
+    meta_text = data.with_suffix(".sigmf-meta").read_text()
+    recipe, _ = blind_search(x, r.sample_rate_hz)
+    sha = sha256_file(data)
+    cert = sign(build_body(x, recipe, sha, "search"))
+    c = client(tmp_path)
+
+    def post(cert_obj, fname, fbytes, **form):
+        files = {"certificate": ("cert.json", json.dumps(cert_obj), "application/json"),
+                "recording": (fname, fbytes, "application/octet-stream")}
+        return c.post("/v1/verify", headers=H, files=files, data=form)
+
+    ok = post(cert, "rec.sigmf-data", open(data, "rb").read(), sigmf=meta_text)
+    assert ok.status_code == 200 and ok.json() == {"reproduced": True, "problems": [], "certificate_id": ok.json()["certificate_id"],
+                                                    "verdict": "pass", "signature": "valid"}
+
+    bad = json.loads(json.dumps(cert))
+    bad["body"]["layers"][0]["stats"]["T2_resid_to_noise_db"] = 0.0
+    tampered = post(bad, "rec.sigmf-data", open(data, "rb").read(), sigmf=meta_text)
+    r2 = tampered.json()
+    assert not r2["reproduced"] and r2["signature"] == "INVALID"
+
+    noise = (np.random.default_rng(0).standard_normal(50_000)).astype("float32").tobytes()
+    wrong = post(cert, "wrong.sigmf-data", noise, fs=str(r.sample_rate_hz), dtype="cf32_le")
+    r3 = wrong.json()
+    assert not r3["reproduced"] and "could not be re-applied" in r3["problems"][0]

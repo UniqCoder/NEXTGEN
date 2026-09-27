@@ -5,7 +5,7 @@ import json, threading, time, uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from .. import __version__
 from ..kernels import BACKEND
@@ -161,6 +161,36 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         if not manifest or not manifest.is_file():
             return []
         return json.loads(manifest.read_text(encoding="utf-8"))
+
+    @app.post("/v1/verify")
+    async def verify_certificate(certificate: UploadFile, recording: UploadFile, sigmf: str | None = Form(None),
+                                 fs: float | None = Form(None), dtype: str | None = Form(None)):
+        """Independent re-check (PRD 'sanjaya verify'): the certificate and its recording, no search, no job.
+        Re-derives every statistic from the file and the certified recipe alone. sigmf: the .sigmf-meta
+        sidecar's text, when the recording is a bare .sigmf-data upload."""
+        import hashlib
+        from ..io import load, sha256_file
+        from ..proof.certificate import verify as verify_cert, check_signature
+        cert = json.loads(await certificate.read())
+        d = workdir / ("verify-" + uuid.uuid4().hex[:12])
+        d.mkdir(parents=True, exist_ok=True)
+        src = d / (recording.filename or "recording")
+        with open(src, "wb") as f:
+            f.write(await recording.read())
+        if sigmf:
+            src.with_suffix(".sigmf-meta").write_text(sigmf)
+            src = src.with_suffix(".sigmf-data") if src.suffix != ".sigmf-data" else src
+        try:
+            x, fs_, data = load(src, fs, dtype)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        try:
+            problems = verify_cert(x, sha256_file(data), cert)
+        except Exception as e:                                       # the certified recipe does not fit this file at all
+            problems = [f"the certified recipe could not be re-applied to this file ({type(e).__name__}: {e})"]
+        cert_id = "SNJ-" + hashlib.sha256(json.dumps(cert["body"], separators=(",", ":")).encode()).hexdigest()[:12].upper()
+        return {"reproduced": not problems, "problems": problems, "certificate_id": cert_id,
+                "verdict": cert.get("body", {}).get("verdict"), "signature": check_signature(cert)}
 
     @app.post("/v1/jobs")
     async def create_job(request: Request, name: str, fs: float | None = None, dtype: str | None = None,
