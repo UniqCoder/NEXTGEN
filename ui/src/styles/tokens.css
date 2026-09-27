@@ -1,0 +1,122 @@
+/* SANJAYA design tokens. Nothing downstream hard-codes a colour, size or curve. */
+
+:root {
+  /* Ink: warm graphite surfaces, layered by hairlines rather than shadows */
+  --ink-0: #0f0f0d;
+  --ink-1: #141412;
+  --ink-2: #1a1a17;
+  --ink-3: #22221e;
+  --ink-4: #2b2a25;
+  --line: #262521;
+  --line-2: #35342e;
+  --line-3: #4a4840;
+
+  /* Bone: text */
+  --bone-1: #e9e5da;
+  --bone-2: #a29d90;
+  --bone-3: #6b675e;
+  --bone-4: #4b4841;
+
+  /* The one living colour */
+  --signal: #ff8a1f;
+  --signal-2: #ffb46b;
+  --signal-ink: #1a0f04;
+  --signal-a12: rgb(255 138 31 / 0.12);
+  --signal-a24: rgb(255 138 31 / 0.24);
+
+  /* Reserved semantic colours */
+  --proof: #7fd6a4;
+  --proof-a14: rgb(127 214 164 / 0.14);
+  --fault: #e5484d;
+  --fault-a14: rgb(229 72 77 / 0.14);
+  --caution: #d8b44a;
+
+  --surface: var(--ink-1);
+  --grain-opacity: 0.045;
+
+  /* Type */
+  --f-sans: 'Hanken Grotesk Variable', 'Hanken Grotesk', ui-sans-serif, sans-serif;
+  --f-mono: 'Martian Mono', ui-monospace, monospace;
+  --t-9: 9.5px;
+  --t-10: 10.5px;
+  --t-11: 11px;
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-15: 15px;
+  --t-20: 20px;
+  --t-28: 28px;
+  --t-44: 44px;
+  --t-72: 72px;
+  --track-label: 0.14em;
+
+  /* Space: 4px grid */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* Shape: sharp reads as precise */
+  --r-0: 0;
+  --r-1: 2px;
+  --r-2: 3px;
+  --r-3: 4px;
+
+  /* Motion: fast, mechanical, no bounce */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --d-1: 120ms;
+  --d-2: 180ms;
+  --d-3: 320ms;
+
+  /* Layers */
+  --z-panel: 1;
+  --z-overlay: 20;
+  --z-palette: 40;
+  --z-toast: 50;
+
+  --titlebar-h: 40px;
+  --statusbar-h: 26px;
+
+  color-scheme: dark;
+}
+
+/* Paper theme: printing certificates and daylight work */
+:root[data-theme='paper'],
+.paper {
+  --ink-0: #f3f0e8;
+  --ink-1: #ece8de;
+  --ink-2: #e4dfd3;
+  --ink-3: #d9d3c5;
+  --ink-4: #cdc6b6;
+  --line: #d6d0c2;
+  --line-2: #c4bdad;
+  --line-3: #a39c8b;
+  --bone-1: #161512;
+  --bone-2: #4d4a42;
+  --bone-3: #7b766b;
+  --bone-4: #a09a8c;
+  --signal: #c85f00;
+  --signal-2: #a34d00;
+  --signal-ink: #fff8ef;
+  --signal-a12: rgb(200 95 0 / 0.1);
+  --signal-a24: rgb(200 95 0 / 0.2);
+  --proof: #1f7a4a;
+  --proof-a14: rgb(31 122 74 / 0.1);
+  --fault: #b3261e;
+  --grain-opacity: 0.06;
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d-1: 0ms;
+    --d-2: 0ms;
+    --d-3: 0ms;
+  }
+}
