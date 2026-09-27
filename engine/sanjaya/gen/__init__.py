@@ -4,10 +4,10 @@ import numpy as np
 from ..recipe import Recipe, Modulation, ConvCode, Interleaver, Scrambler, Crc, Field, Framing
 from ..chain import encode_frames, shape, sps_of
 from ..bits import crc_bits, to_bits
-from ..demod import frac_shift, rotate
+from ..dsp import rotate
 
 
-def gen0_recipe(symbol_rate: float = 9600.0, sps: int = 8, rolloff: float = 0.35) -> Recipe:
+def gen0_recipe(symbol_rate: float = 9600.0, sps: float = 8, rolloff: float = 0.35) -> Recipe:
     fields = [Field(name="counter", bits=16, kind="counter"), Field(name="length", bits=8, kind="length"),
               Field(name="payload", bits=704, kind="payload"), Field(name="crc", bits=16, kind="crc"),
               Field(name="fill", bits=18, kind="fill")]                 # 762 info + 6 tail -> 1536 coded = 48 x 32
@@ -45,8 +45,9 @@ def build_info(recipe: Recipe, counters: np.ndarray, payload: np.ndarray) -> np.
 
 
 def generate(seed: int = 147, esn0_db: float = 12.0, n_frames: int = 40, guard_s: float = 0.05,
-             recipe: Recipe | None = None, cfo_hz: float | None = None, gain: float = 0.3):
-    """Returns (x complex64, recipe, truth dict, taps dict)."""
+             recipe: Recipe | None = None, cfo_hz: float | None = None, gain: float = 0.3, clock_ppm: float = 0.0):
+    """Returns (x complex64, recipe, truth dict, taps dict). clock_ppm: receiver sample clock error
+    (+ = receiver clock fast, so each symbol spans sps*(1 + ppm*1e-6) samples of the recording)."""
     recipe = recipe or gen0_recipe()
     rng = np.random.default_rng(seed)
     fs, sps = recipe.sample_rate_hz, sps_of(recipe)
@@ -58,11 +59,12 @@ def generate(seed: int = 147, esn0_db: float = 12.0, n_frames: int = 40, guard_s
     stream = taps["symbols"].ravel()
 
     guard = int(round(guard_s * fs))
-    n = 2 * guard + stream.size * sps
-    clean = shape(stream, sps, recipe.modulation.rolloff, n, guard)
+    sps_rx = sps * (1 + clock_ppm * 1e-6)
+    n = 2 * guard + int(np.ceil(stream.size * sps_rx))
     cfo = float(rng.uniform(-400, 400)) if cfo_hz is None else cfo_hz
     phase, delay = float(rng.uniform(0, 2 * np.pi)), float(rng.uniform(0, sps))
-    imp = gain * rotate(frac_shift(clean, delay), cfo / fs, phase)
+    clean = shape(stream, sps_rx, recipe.modulation.rolloff, n, guard + delay)
+    imp = gain * rotate(clean, cfo / fs, phase)
     p_sig = float(np.mean(np.abs(imp[guard: n - guard]) ** 2))
     sigma2 = p_sig * sps / 10 ** (esn0_db / 10)                        # Es/N0 = P * sps / sigma^2
     noise = np.sqrt(sigma2 / 2) * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
@@ -70,6 +72,7 @@ def generate(seed: int = 147, esn0_db: float = 12.0, n_frames: int = 40, guard_s
 
     truth = {"generator": "sanjaya-gen v0", "seed": seed, "esn0_db": esn0_db, "n_frames": n_frames,
              "cfo_hz": cfo, "phase_rad": phase, "delay_samples": delay, "gain": gain, "noise_var": sigma2,
-             "guard_samples": guard, "first_symbol_sample": guard + delay, "counter_start": int(counters[0])}
+             "guard_samples": guard, "first_symbol_sample": guard + delay, "counter_start": int(counters[0]),
+             "clock_ppm": clock_ppm, "samples_per_symbol_actual": sps_rx}
     taps.update(info=info, clean=clean, impaired=imp)
     return x, recipe, truth, taps

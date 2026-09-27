@@ -8,7 +8,7 @@ from scipy.stats import binom, norm
 from ..recipe import Recipe, LayerVerdict, NearMiss
 from ..pipeline import FrontEnd, Unwrapped, frontend, unwrap
 from ..chain import encode_frames, shape
-from ..demod import frac_shift, rotate
+from ..dsp import rotate
 from ..coding import syndrome_rate_half, check_weight
 
 CALIBRATION_ID = "v0-defaults"
@@ -23,6 +23,7 @@ class Resynthesis:
     xhat: np.ndarray                 # re-synthesised recording over the region
     resid: np.ndarray                # x - xhat over the region
     noise: np.ndarray | None         # reference noise samples (None when no signal-free segment exists)
+    sps: float                       # measured samples per symbol (cyclic frequency for T3)
 
 
 def resynthesise(x: np.ndarray, recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> Resynthesis:
@@ -35,11 +36,11 @@ def resynthesise(x: np.ndarray, recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> 
     if fe.conj:
         est = np.conj(est)
     est = fe.amp * est * np.exp(1j * fe.theta)
-    clean = shape(est, sps, recipe.modulation.rolloff, x.size, fe.k0)
-    xhat = rotate(frac_shift(clean, fe.advance), fe.cfo_hz / fs)
-    pad = 6 * sps
-    a = max(0, int(fe.k0 + fe.advance + fe.starts[0] * sps) - pad)
-    b = min(x.size, int(fe.k0 + fe.advance + (fe.starts[-1] + fe.period) * sps) + pad)
+    clean = shape(est, sps, recipe.modulation.rolloff, x.size, fe.t0)
+    xhat = rotate(clean, fe.cfo_hz / fs)
+    pad = int(6 * sps)
+    a = max(0, int(fe.instants(fe.starts[0])) - pad)
+    b = min(x.size, int(fe.instants(fe.starts[-1] + fe.period)) + pad)
     xr, hr = x[a:b], xhat[a:b]
     B = TH["gain_block"]                                           # piecewise complex gain (phase trajectory)
     for i in range(0, hr.size, B):
@@ -58,7 +59,7 @@ def resynthesise(x: np.ndarray, recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> 
         sel = outside & (p <= floor * 10 ** 0.1)
         if sel.sum() >= TH["noise_min_windows"]:
             noise = x[: nw * W].reshape(nw, W)[sel].ravel()
-    return Resynthesis((a, b), hr, (xr - hr).astype(np.complex64), noise)
+    return Resynthesis((a, b), hr, (xr - hr).astype(np.complex64), noise, sps)
 
 
 def _acf(v: np.ndarray, lags: int = 8) -> np.ndarray:
@@ -85,8 +86,9 @@ def phy_layer(x: np.ndarray, recipe: Recipe, rs: Resynthesis) -> LayerVerdict:
     a, b = rs.region
     r, xr = rs.resid, x[a:b]
     Pr, Px = float(np.mean(np.abs(r) ** 2)), float(np.mean(np.abs(xr) ** 2))
-    t3 = _cyclic_stat(r, recipe.modulation.symbol_rate_hz / recipe.sample_rate_hz)
-    stats = {"P_resid": Pr, "P_x": Px, "T3_cyclic": t3, "T3_cyclic_recording": _cyclic_stat(xr, recipe.modulation.symbol_rate_hz / recipe.sample_rate_hz)}
+    t3 = _cyclic_stat(r, 1 / rs.sps)
+    stats = {"P_resid": Pr, "P_x": Px, "T3_cyclic": t3, "T3_cyclic_recording": _cyclic_stat(xr, 1 / rs.sps),
+             "symbol_rate_measured_hz": recipe.sample_rate_hz / rs.sps}
     th = {"eta_min": TH["eta_min"], "delta_db": TH["delta_db"], "t3_gamma": TH["t3_gamma"]}
     fails, nd = [], []
     if not t3 < TH["t3_gamma"]:
