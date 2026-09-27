@@ -4,13 +4,14 @@ import { SCENARIO } from '../lib/engine'
 import { go, useRoute } from '../lib/router'
 import { STEPS, setState, stepStatus, useApp } from '../lib/store'
 import { Knob, Seg } from './ui'
+import { Sufficiency } from './Sufficiency'
 
 /** Shown instead of a step's normal content once the blind search comes back undecided: no recipe
  * survived, so there is nothing to de-interleave, decode or prove — only what was measured. */
-export function Undecided({ reason }: { reason: string | null }) {
+export function Undecided({ reason, inline }: { reason: string | null; inline?: boolean }) {
   const m = SCENARIO.view.measured
   return (
-    <div className="empty">
+    <div className={'empty' + (inline ? ' inline' : '')}>
       <span className="label">Undecided</span>
       <h2>{m ? "Identified, but not decoded." : "No emission to decode."}</h2>
       <p className="dim">{reason ?? 'The blind search ran out of hypotheses before one passed the layered proof.'}</p>
@@ -26,6 +27,7 @@ export function Undecided({ reason }: { reason: string | null }) {
           </tbody>
         </table>
       )}
+      <Sufficiency />
       <p className="small dimmer" style={{ marginTop: 14 }}>See the real spectrum and these measurements on the <a href="#/signal">Signal</a> step.</p>
     </div>
   )
@@ -55,7 +57,7 @@ export function Step(props: {
         </div>
         {props.actions && <div className="step-actions">{props.actions}</div>}
       </header>
-      <div className="step-body">{undecided ? <Undecided reason={jobNote} /> : props.children}</div>
+      <div className="step-body">{undecided ? <Undecided reason={jobNote} inline /> : props.children}</div>
       <footer className="step-foot">
         {props.back ? (
           <button className="btn ghost" onClick={() => go(props.back!.to)}>← {props.back.label}</button>

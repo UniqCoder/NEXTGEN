@@ -341,3 +341,9 @@ details summary { cursor: pointer; color: var(--bone-2); }
 .content-banner .small:last-child { grid-column: 2 / -1; }
 .content-banner.voice, .content-banner.cw { border-left-color: var(--caution); background: rgb(216 180 74 / 0.08); }
 .content-banner.noise { border-left-color: var(--bone-3); background: var(--ink-2); }
+
+/* data-sufficiency ledger (USP 3a) */
+.suff { margin-top: 18px; max-width: 880px; }
+.suff-h { margin: 8px 0 10px; font-size: 15px; line-height: 1.45; }
+.empty.inline { height: auto; justify-content: flex-start; padding: 4px 0 28px; }
+.empty.inline h2 { font-size: var(--t-28, 28px); }

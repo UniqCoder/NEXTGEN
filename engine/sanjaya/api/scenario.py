@@ -261,6 +261,7 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
             "view": {"lo": floor - 6, "range": span + 16, "floor": round(floor), "span": int(span), "rowStart": row_start,
                      "gridSeconds": _grid_step(dur), "psdMin": psd_min, "psdMax": psd_max, "obwDb": obw_db,
                      "verdict": body.verdict, "source": src,
+                     "sufficiency": step["sufficiency"].evidence if "sufficiency" in step else None,
                      "layers": [{"layer": l.layer, "verdict": l.verdict, "reason": l.reason} for l in body.layers],
                      "equivalences": body.equivalences},
             "text": text,
@@ -275,7 +276,7 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
     }
 
 
-def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str, phy: dict | None = None) -> dict:
+def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str, phy: dict | None = None, ledger: dict | None = None) -> dict:
     """No recipe survived the search: still show the real spectrogram and everything the physics expert
     identified on its own (family, order, rate, carrier, consistent standards, measured symbols), and why
     decoding stopped. An honest 'undecided, because...', never a guess (PROTOTYPE_PLAN §5)."""
@@ -356,7 +357,7 @@ def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str, phy: dict |
                      "span": int(np.ceil(np.percentile(S_full, 99.9) - _floor(S_full) + 5)),
                      "rowStart": 0, "psdMin": float(np.floor(np.percentile(live, 2) - 2)), "psdMax": float(np.ceil(avg.max() + 3)),
                      "obwDb": obw_db,
-                     "gridSeconds": _grid_step(dur), "verdict": "undecided", "reason": reason, "measured": measured, "source": "search",
+                     "gridSeconds": _grid_step(dur), "verdict": "undecided", "reason": reason, "measured": measured, "source": "search", "sufficiency": ledger,
                      "layers": [], "equivalences": []},
             "text": {"heroCap": f"{fs / 1e3:g} kHz · {dur:.1f} s", "format": f"{meta['format']} · {fs / 1e3:g} kHz",
                      "evm": "measured symbols · not decoded" if cons else "",

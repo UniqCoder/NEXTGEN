@@ -75,6 +75,10 @@ export const SCENARIO = {
       standards: { name: string; ppm: number | null }[]
     } | null,
     layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
+    sufficiency: null as {
+      verdict: 'sufficient' | 'more_data' | 'not_data_limited'; headline: string; have_s: number
+      entries: { decision: string; status: string; evidence: string; limit: string | null; need_s: number[] | null; min_s?: number[]; blocking?: boolean }[]
+    } | null,
   },
   text: {
     evm: 'EVM 6.1 % · MER 24.3 dB',
