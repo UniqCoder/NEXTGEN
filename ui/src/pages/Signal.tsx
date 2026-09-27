@@ -16,19 +16,25 @@ export function Signal() {
   const span = useApp((s) => s.span)
   const override = useApp((s) => s.modOverride)
   const demodDone = useApp((s) => s.stages[3] === 'done')
-  const measured = useApp((s) => s.stages.slice(0, 4).every((x) => x === 'done' || x === 'override'))
+  const undecided = useApp((s) => s.job === 'undecided')
+  const measured = useApp((s) => s.stages.slice(0, 4).every((x) => x === 'done' || x === 'override')) || undecided
   const running = useApp((s) => s.stages.some((x) => x === 'running'))
   const [view, setView] = useState<View>('const')
 
   const e1 = SCENARIO.emitters[0]
   const T = SCENARIO.text
-  const overlays: Overlay[] = [{ ...e1, alpha: 1, label: `E1 · ${override ?? T.mod} · ${T.baud} Bd`, tone: 'signal' }]
+  const m = SCENARIO.view.measured
+  const overlays: Overlay[] = e1 ? [{ ...e1, alpha: 1,
+    label: undecided ? 'E1 · undecided' : `E1 · ${override ?? T.mod} · ${T.baud} Bd`, tone: undecided ? 'bone' : 'signal' }] : []
 
   return (
     <Step
       n={2}
       title="Signal"
-      lede={measured ? (
+      lede={undecided ? (
+        m ? <>An emission at <b>{Math.round(m.centre_hz).toLocaleString()} Hz</b>, {(m.band_hi_hz - m.band_lo_hz).toFixed(0)} Hz wide, {m.snr_db.toFixed(0)} dB SNR{m.rate_hz ? <> — candidate rate <b>{m.rate_hz.toFixed(2)} Bd</b></> : null}{m.tones_hz.length ? <>, tones at {m.tones_hz.map((t) => Math.round(t)).join(', ')} Hz</> : null}. No recipe passed the proof yet — see why on <a href="#/decoding">Decoding</a>.</>
+          : 'No emission stood out from the noise floor.'
+      ) : measured ? (
         <>One strong signal at <b>{T.at}</b>: <b>{override ?? T.mod}</b> at <b>{T.baudSpaced}</b> symbols per second, SNR {T.snr} dB.{T.others ? <> {T.others}, <a href="#/scene">see them in Scene</a>.</> : null}</>
       ) : running ? 'Measuring the recording: sample rate, bandwidth, symbol rate, then the modulation…' : 'Run Autopilot to measure the recording.'}
       actions={
@@ -62,7 +68,7 @@ export function Signal() {
         <section className="found" style={{ gridArea: 'found' }}>
           <h2>What we found</h2>
           <p className="small dim">Click a value to see the evidence.</p>
-          <Params keys={['content', 'fs', 'baud', 'modulation', 'snr', 'bw', 'cfo', 'fc']} />
+          <Params keys={['content', 'fs', 'baud', 'modulation', 'snr', 'bw', 'cfo', 'fc', 'tones']} />
         </section>
       </div>
     </Step>

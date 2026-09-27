@@ -8,6 +8,15 @@ import { useApp } from '../lib/store'
 
 
 export function Decoding() {
+  const undecided = useApp((s) => s.job === 'undecided')
+  if (undecided) return <Step n={3} title="Decoding" lede={null} back={{ to: '/signal', label: 'Signal' }} next={{ to: '/frames', label: 'Continue to header & payload', disabled: true }}>{null}</Step>
+  return <DecodingReady />
+}
+
+/** Everything below assumes a recipe was found: SCENARIO.text.chain, ilRows/ilCols etc. are only ever
+ * populated once a job decodes (build_partial has none of it) — kept in its own component so Decoding()
+ * can bail out above before any of these hooks run. */
+function DecodingReady() {
   const expert = useApp((s) => s.mode === 'expert')
   const done = useApp((s) => s.stages[4] === 'done')
   const [ilType, setIlType] = useState('Block')
