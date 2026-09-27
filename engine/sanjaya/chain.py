@@ -21,7 +21,7 @@ def _scr(poly: tuple[int, ...], seed: int, n: int) -> np.ndarray:
 
 def scrambler_seq(recipe: Recipe, n: int) -> np.ndarray:
     s = recipe.scrambler
-    return _scr(tuple(s.poly_exponents), s.seed, n)
+    return np.zeros(n, np.uint8) if s is None else _scr(tuple(s.poly_exponents), s.seed, n)
 
 
 def asm_symbols(recipe: Recipe) -> np.ndarray:

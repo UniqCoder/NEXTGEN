@@ -58,6 +58,7 @@ def build_body(x: np.ndarray, recipe: Recipe, input_sha256: str, recipe_source: 
         attempts_k=1, false_pass_bound=None,                          # set once the G5 campaign measures p-hat
         equivalences=[f"not separable from the certified recipe: {n.name}" for n in nm if not n.rejected],
         analyst_overrides=["recipe supplied by the analyst (known-recipe mode)"] if recipe_source == "supplied" else [])
+    # attempts_k counts proof attempts that could have certified a different recipe: v1 search proves once
 
 
 def sign(body: CertificateBody) -> dict:
