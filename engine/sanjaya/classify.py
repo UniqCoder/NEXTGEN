@@ -18,6 +18,7 @@ from .measure import occupied_band, band_measure, cfo_power, timing_fit, _peak
 BLK = 32                 # symbols per coherence block (tolerates slow phase drift)
 ORDER_MIN = 0.5          # best-order coherence needed to decide the order at all (random data: ~0.18)
 ORDER_TIE = 0.85         # an order within this fraction of the best counts as explaining the symbols
+RATE_CLEAR = 2.0         # the band-edge line must beat the best other rate by this factor to be trusted
 FSK_CONC = 0.6           # fraction of in-band energy that must sit on the tones
 PSK_NAME = {2: "BPSK", 4: "QPSK", 8: "8PSK"}
 
@@ -50,7 +51,8 @@ def edge_rate(x, fs, fc, bw):
     X = np.fft.fft(x.astype(np.complex128))
     f = np.fft.fftfreq(x.size, 1 / fs)
     nfft = 1 << int(np.ceil(np.log2(2 * x.size)))
-    grid = np.exp(np.arange(np.log(0.25 * bw), np.log(1.08 * bw), np.log(1.04)))   # 0.25: non-RRC pulses (PSK31) are wide
+    # 0.25: non-RRC pulses (PSK31) are wide; 1.6: at low SNR the measured band shrinks as its edges sink into the noise
+    grid = np.exp(np.arange(np.log(0.25 * bw), np.log(1.6 * bw), np.log(1.04)))
     scores = []
     for r in grid:
         keep = (np.abs(f - (fc - r / 2)) < 0.2 * r) | (np.abs(f - (fc + r / 2)) < 0.2 * r)
@@ -61,7 +63,12 @@ def edge_rate(x, fs, fc, bw):
         scores.append((_line(F, k), _peak(F, k) * fs / nfft))
     scores.sort(key=lambda s: -s[0])
     best = scores[0]
-    other = next((s for s in scores[1:] if abs(s[1] - best[1]) > 0.06 * best[1]), (0.0, 0.0))
+    # a line at r/2 cannot come from rate r (no RRC pulse has >100 % excess bandwidth): prefer the fundamental
+    half = max((s for s in scores if abs(s[1] / best[1] - 0.5) < 0.04), default=None, key=lambda s: s[0])
+    if half and half[0] >= 0.3 * best[0]:
+        best = half
+    related = lambda r: any(abs(r / best[1] - k) < 0.04 * k for k in (0.5, 1 / 3, 1, 2, 3))
+    other = next((s for s in scores if not related(s[1])), (0.0, 0.0))    # harmonics are not rival hypotheses
     return best[1], best[0], other[0]
 
 
@@ -130,12 +137,14 @@ def _psk(x, fs, lo, hi, fc):
     fits = decode_fit(y, fs, rate)
     coh = {M: fits[M][0] for M in fits}
     best = max(coh.values())
-    order = next((M for M in (2, 4, 8) if coh[M] >= ORDER_TIE * best), None) if best >= ORDER_MIN else None
+    clear = strength >= RATE_CLEAR * runner                          # no order claim at a rate that is not clear
+    order = next((M for M in (2, 4, 8) if coh[M] >= ORDER_TIE * best), None) if best >= ORDER_MIN and clear else None
     cands = sorted(({"v": PSK_NAME[M], "p": round(coh[M], 3)} for M in coh), key=lambda c: -c["p"])
     # timing-fit rate (whole-file phase slope) when the symbols are clean; the edge line when they are smeared
     out = {"family": "PSK", "rate_hz": fits[order][3] if order else rate, "rate_strength": strength, "rate_runner_up": runner,
-           "coherence": {PSK_NAME[M]: round(coh[M], 3) for M in coh}, "order": order,
-           "modulation": PSK_NAME[order] if order else "PSK (order not separable)", "candidates": cands,
+           "coherence": {PSK_NAME[M]: round(coh[M], 3) for M in coh}, "order": order, "rate_clear": bool(clear),
+           "modulation": PSK_NAME[order] if order else "PSK (order not separable)" if clear else "PSK (rate uncertain)",
+           "candidates": cands,
            "carrier_hz": fc + fits[order][2] if order else fc}
     if order:
         c, ys, *_ = fits[order]

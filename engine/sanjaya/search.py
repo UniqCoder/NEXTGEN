@@ -7,6 +7,7 @@ import numpy as np
 from .recipe import Recipe, Modulation, ConvCode, Interleaver, Scrambler, Crc, Field, Framing
 from .measure import symbol_rate_blind, cfo_power, rolloff_psd
 from .classify import identify
+from .sufficiency import Ledger, phy_entries, frames_needed, power_frames, Z_CODE, Z_REAL
 from .pipeline import symbols, frontend, unwrap
 from .coding.blind import identify_code, solve_scrambler, edge_violations, CodeHypothesis
 from .bits.lens import find_counter, find_crc, constant_runs
@@ -17,6 +18,7 @@ MIN_SYNC = 8                  # minimum sync-marker length in symbols
 
 class SearchError(RuntimeError):
     phy: dict | None = None            # the classify result, so an undecided job still reports what was identified
+    ledger: dict | None = None         # the data-sufficiency ledger: what was decided, what limits the rest
 
 
 @dataclass
@@ -72,17 +74,23 @@ def blind_search(x: np.ndarray, fs: float, on_step=None) -> tuple[Recipe, list[S
                     self.append(s)
         log = _Log()
     phy = identify(x, fs)
+    led = Ledger(x.size / fs)
+    phy_entries(led, x, fs, phy)
     try:
-        return _search(x, fs, log, phy)
+        recipe, log = _search(x, fs, log, phy, led)
+        log.append(Step("sufficiency", led.headline()[1], "measured", led.to_dict()))
+        return recipe, log
     except SearchError as e:
-        if phy is not None and phy["family"] == "PSK" and not phy["order"]:
-            e.args = (f"PSK order not separable (symbols smeared, e.g. HF multipath with no equalizer); "
-                      f"under the QPSK hypothesis: {e.args[0]}",)
+        e.ledger = led.to_dict()
+        if phy is not None and phy["family"] == "PSK" and phy["order"] != 4:
+            head = (f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified (the v1 coding layer covers QPSK)" if phy["order"]
+                    else "PSK order not separable (symbols smeared: HF multipath with no equalizer, or too few symbols)")
+            e.args = (f"{head}; under the QPSK hypothesis: {e.args[0]}",)
         e.phy = phy
         raise
 
 
-def _search(x, fs, log, phy):
+def _search(x, fs, log, phy, led):
     # 0 CLASSIFY (physics expert) ----------------------------------------------------------------------------
     if phy is None:
         raise SearchError("no emission stands out from the noise floor")
@@ -90,9 +98,12 @@ def _search(x, fs, log, phy):
     log.append(Step("classify", f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd" + (f", consistent with {std}" if std else ""),
                     "blind", {"family": phy["family"], "coherence": phy.get("coherence"), "candidates": phy.get("candidates"),
                               "standards": phy["standards"]}))
-    if phy["family"] == "FSK" or phy["order"] not in (None, 4):
+    # A classifier never vetoes what the coding layer could still confirm (short or weak captures can mislead it);
+    # only FSK, where the QPSK chain cannot apply at all, stops here.
+    if phy["family"] == "FSK":
+        led.add("Coding layer", "undecided", "FSK coding is not in the v1 hypothesis set", "scope")
         raise SearchError(f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified; the v1 blind coding layer covers "
-                          f"QPSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
+                          f"linear PSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
     rs0 = symbol_rate_blind(x, fs)
     cfo0 = cfo_power(x, fs, 4)
@@ -104,8 +115,17 @@ def _search(x, fs, log, phy):
     # 3 FRAME / SYNC -------------------------------------------------------------------------------------------
     fr = discover_frames(ys)
     if fr is None:
+        reach = min(8192, ys.size // 4)
+        led.add("Frame period and sync", "undecided", f"no repeating constant symbol run for any period 16-{reach} symbols",
+                "data" if reach < 8192 else "structure",
+                need_s=(4 * 8192 / rs, 4 * 8192 / rs) if reach < 8192 else None,
+                note="periods up to 8192 symbols need 4 frames in the capture" if reach < 8192 else None)
         raise SearchError("no PHY sync marker found (coded-domain sync search arrives with the Meteor path, G3)")
     P, run_st, run_len, run_tmpl = fr
+    frame_s = P / rs
+    led.add("Frame period and sync", "decided", f"period {P} symbols ({1e3 * frame_s:.1f} ms), constant run {run_len} symbols")
+    best_z = [0.0, 0]                                                # best (sub-threshold) code statistic and its frames
+    seen = [0]                                                       # most frames any sync alignment delivered
 
     def alignments():
         """Every byte-aligned (length, offset) of a sync marker inside the constant run, longest first."""
@@ -132,10 +152,18 @@ def _search(x, fs, log, phy):
     for exhaustive in (0, 8):
         for L, o, tmpl, body in alignments():
             nc = 2 * body.shape[1]
+            seen[0] = max(seen[0], body.shape[0])
             if nc not in codes:                                    # the code is ~shift-invariant: once per length
                 ident = next((v for v in codes.values() if v and v[0].rows in (1, v[0].rows * v[0].cols)), None)
-                codes[nc] = [CodeHypothesis(h.swap, 1, nc, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
-                             for h in ident] if ident else                             [h for h in identify_code(_qpsk_bits(body)) if h.bias > 10 * h.noise_level and h.runner_up < 0.5 * h.bias]
+                if ident:
+                    codes[nc] = [CodeHypothesis(h.swap, 1, nc, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
+                                 for h in ident]
+                else:
+                    allh = identify_code(_qpsk_bits(body))
+                    for h in allh:
+                        if h.bias / h.noise_level > best_z[0]:
+                            best_z[:] = [h.bias / h.noise_level, body.shape[0]]
+                    codes[nc] = [h for h in allh if h.bias > Z_CODE * h.noise_level and h.runner_up < 0.5 * h.bias]
             for h in codes[nc]:
                 ch = CodeHypothesis(False, h.rows, h.cols, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
                 for conj, k, tf in phase_hyps(h):
@@ -150,8 +178,23 @@ def _search(x, fs, log, phy):
         if phases:
             break
     if not any(codes.values()):
+        z, F = best_z
+        cap = lambda n: (n + 1) * frame_s                              # capture length holding n whole frames
+        if z >= Z_REAL and F >= 2:
+            p50, p90 = frames_needed(F, z)
+            led.add("Code and interleaver", "undecided", f"best rate-1/2 check at {z:.1f}x the random level from {F} frames "
+                    f"(accepts at {Z_CODE:.0f}x; the statistic grows as sqrt(frames - 1)): needs {p50} (P50) / {p90} (P90) frames",
+                    "data", need_s=(cap(p50), cap(p90)), have_frames=F, need_frames=[p50, p90])
+        elif (pw := power_frames(seen[0], 2 * (P - run_len))) is not None:
+            led.add("Code and interleaver", "undecided", f"{seen[0]} frames are too few to see a code at all (a typical code "
+                    f"would be accepted from {pw[0]} frames, a weak one from {pw[1]}); absence of evidence is not evidence here",
+                    "data", need_s=(cap(pw[0]), cap(pw[1])), have_frames=seen[0], need_frames=list(pw))
+        else:
+            led.add("Code and interleaver", "undecided", f"best rate-1/2 check at {z:.1f}x the random level from {seen[0]} "
+                    f"frames, which would have shown even a weak code: no convolutional code is present", "structure")
         raise SearchError("no rate-1/2 convolutional structure for any sync alignment")
     if not phases:
+        led.add("Scrambler", "undecided", "no additive LFSR of degree <= 8 (or in the library) fits the coded frames", "scope")
         raise SearchError("no additive scrambler of degree <= 8 (or in the library) fits the coded frames")
     # Constant columns hold the marker AND constant coded symbols next to it (fill, tail, fixed header bits);
     # interleaving makes the code nearly shift-invariant. Pass 2 fits code + scrambler at every alignment.
@@ -173,6 +216,7 @@ def _search(x, fs, log, phy):
                     edge = edge_violations(bits, ch, sc[1], sc[2])
                     viable.append(((max(sc[1]) if sc[1] else 0, sc[3], edge, L), h, L, tmpl, body, conj, k, sc, tf))
     if not viable:
+        led.add("Scrambler", "undecided", "no additive LFSR of degree <= 8 (or in the library) fits the coded frames", "scope")
         raise SearchError("no additive scrambler of degree <= 8 (or in the library) fits the coded frames")
     viable.sort(key=lambda v: v[0])
     # rank: lowest scrambler degree, fewest inconsistent checks, fewest block-edge violations, shortest marker;
@@ -198,6 +242,18 @@ def _search(x, fs, log, phy):
                     {"inconsistent_checks": sbad, "phase_rot_deg": 90 * k, "conj": conj,
                      "equivalent_phase_hypotheses": len(tied), "structure_score": score}))
     log.extend(info_log)
+    z, F = best_z
+    code_ev = f"K={code.K} ({','.join(code.generators_octal)}), {code.rows}x{code.cols}"
+    if F >= 2 and z > 0:
+        p50, p90 = frames_needed(F, z)
+        led.add("Code and interleaver", "decided", f"{code_ev}: check at {z:.1f}x the random level from {F} frames; "
+                f"{p50} (P50) / {p90} (P90) frames would have sufficed",
+                min_s=[round((p50 + 1) * frame_s, 2), round((p90 + 1) * frame_s, 2)], min_frames=[p50, p90])
+    else:
+        led.add("Code and interleaver", "decided", code_ev)
+    led.add("Scrambler", "decided", "none" if not sexps else f"{sname}, seed 0x{sseed:X}")
+    led.add("Frame structure", "decided", ", ".join(f.name for f in recipe.framing.fields))
+    led.resolve("Modulation order", "QPSK: the symbols decode under the QPSK code (the layered proof decides next)")
     return recipe, log
 
 

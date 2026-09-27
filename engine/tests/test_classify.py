@@ -58,3 +58,10 @@ def test_noise_is_not_an_emission():
     rng = np.random.default_rng(1)
     x = (rng.standard_normal(200_000) + 1j * rng.standard_normal(200_000)).astype(np.complex64)
     assert identify(x, 76_800.0) is None
+
+
+def test_short_weak_capture_makes_no_false_order_claim():
+    """0.66 s at 7 dB: the rate is still right, but the expert must not claim an order it cannot see."""
+    x, recipe, truth, _ = generate(seed=149, esn0_db=7.0, n_frames=7)
+    r = identify(x, recipe.sample_rate_hz)
+    assert abs(r["rate_hz"] - 9600) < 1 and r["order"] in (None, 4)
