@@ -84,7 +84,7 @@ export function Ingest() {
                     <td className="small dim">{s.what}</td>
                     <td className="mono small dimmer">{s.duration_s ? `${s.duration_s.toFixed(1)} s` : ''}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <span className={'tag ' + (s.kind === 'synthetic' ? 'plain' : 'proven')}>{s.kind}</span>
+                      <span className={'tag ' + (s.kind === 'real' ? 'proven' : s.kind === 'stitch' ? 'novel' : 'plain')}>{s.kind === 'stitch' ? 'multi-sensor' : s.kind}</span>
                     </td>
                   </tr>
                 ))}

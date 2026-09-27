@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import __version__
 from ..kernels import BACKEND
 
-STAGE_OF = {"classify": (0,), "measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
+STAGE_OF = {"capture": (0,), "stitch": (0, 1), "classify": (0,), "measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
 DEV_ORIGIN = "http://localhost:5173"
 
 
@@ -28,55 +28,70 @@ class Job:
     started: float = field(default_factory=time.time)
 
 
-def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None):
+def _meta(name: str, path: Path, x, fs_: float, sha: str, dtype: str | None, fc_hz: float | None) -> dict:
+    suffix = path.suffix.lower()
+    return {"name": name, "path": str(path), "size": path.stat().st_size, "sha256": sha,
+            "format": {".wav": "WAV", ".sigmf-data": "SigMF"}.get(suffix, "Raw IQ") + (f" · {dtype}" if dtype else ""),
+            "route": "wav" if suffix == ".wav" else "iq",
+            "source_fs": "WAV header" if suffix == ".wav" else ("SigMF core:sample_rate" if suffix == ".sigmf-data" else "analyst entry"),
+            "fc_hz": fc_hz,
+            "forensics": [
+                {"k": "Container", "v": "WAV (RIFF)" if suffix == ".wav" else "SigMF" if suffix == ".sigmf-data" else "None (headerless)",
+                 "conf": 1, "method": "blind", "note": ""},
+                {"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": "from the header"},
+                {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
+                {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": "recorded in the certificate"},
+            ]}
+
+
+def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None, members: list[tuple[Path, str]] | None = None):
+    """One recording (blind search), or several captures of one emitter (members: evidence stitching)."""
     from ..io import load, sha256_file
     from ..search import blind_search, SearchError
     from ..proof.certificate import build_body, sign
-    from .scenario import build
+    from .scenario import build, build_partial
     job.state = "running"
     job.stages[0] = "running"
-    try:
-        x, fs_, data = load(job.path, fs, dtype)
-        sha = sha256_file(data)
 
-        def on_step(s):
-            job.log.append({"stage": s.stage, "finding": s.finding, "method": s.method})
-            for i in STAGE_OF.get(s.stage, ()):
-                job.stages[i] = "done"
-            nxt = next((i for i, v in enumerate(job.stages[:6]) if v == "pending"), None)
-            if nxt is not None:
-                job.stages[nxt] = "running"
-        try:
-            recipe, log = blind_search(x, fs_, on_step)
-        except SearchError as e:
-            from .scenario import build_partial
-            suffix = job.path.suffix.lower()
-            meta = {"name": job.name, "path": str(job.path), "size": job.path.stat().st_size, "sha256": sha,
-                    "format": {".wav": "WAV", ".sigmf-data": "SigMF"}.get(suffix, "Raw IQ") + (f" · {dtype}" if dtype else ""),
-                    "route": "wav" if suffix == ".wav" else "iq",
-                    "forensics": [{"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": ""},
-                                  {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
-                                  {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": ""}]}
-            job.result = build_partial(x, fs_, meta, str(e), e.phy, e.ledger)
-            job.state, job.error = "undecided", str(e)
-            job.stages = ["failed" if v == "running" else v for v in job.stages]
-            return
-        body = build_body(x, recipe, sha, "search")
+    def on_step(s):
+        job.log.append({"stage": s.stage, "finding": s.finding, "method": s.method})
+        for i in STAGE_OF.get(s.stage, ()):
+            job.stages[i] = "done"
+        nxt = next((i for i, v in enumerate(job.stages[:6]) if v == "pending"), None)
+        if nxt is not None:
+            job.stages[nxt] = "running"
+    try:
+        extra, source = {}, "search"
+        if members:
+            from ..stitch import stitch
+            caps = [load(p) for p, _ in members]
+            try:
+                recipe, log, report, ref = stitch([(x, f, label) for (x, f, _), (_, label) in zip(caps, members)], on_step)
+            except SearchError as e:
+                x, fs_, data = caps[0]
+                meta = _meta(members[0][1], members[0][0], x, fs_, sha256_file(data), dtype, fc_hz)
+                job.result = build_partial(x, fs_, meta, str(e), None, e.ledger)
+                job.result["scenario"]["view"]["stitch"] = getattr(e, "stitch", None)
+                job.state, job.error = "undecided", str(e)
+                job.stages = ["failed" if v == "running" else v for v in job.stages]
+                return
+            (x, fs_, data), (path, name) = caps[ref], members[ref]
+            extra, source = {"stitch": report}, "stitch"
+        else:
+            x, fs_, data = load(job.path, fs, dtype)
+            path, name = job.path, job.name
+            try:
+                recipe, log = blind_search(x, fs_, on_step)
+            except SearchError as e:
+                job.result = build_partial(x, fs_, _meta(name, path, x, fs_, sha256_file(data), dtype, fc_hz), str(e), e.phy, e.ledger)
+                job.state, job.error = "undecided", str(e)
+                job.stages = ["failed" if v == "running" else v for v in job.stages]
+                return
+        sha = sha256_file(data)
+        body = build_body(x, recipe, sha, source)
         job.cert = sign(body)
-        suffix = job.path.suffix.lower()
-        meta = {"name": job.name, "path": str(job.path), "size": job.path.stat().st_size, "sha256": sha,
-                "format": {".wav": "WAV", ".sigmf-data": "SigMF"}.get(suffix, "Raw IQ") + (f" · {dtype}" if dtype else ""),
-                "route": "wav" if suffix == ".wav" else "iq",
-                "source_fs": "WAV header" if suffix == ".wav" else ("SigMF core:sample_rate" if suffix == ".sigmf-data" else "analyst entry"),
-                "fc_hz": fc_hz,
-                "forensics": [
-                    {"k": "Container", "v": {"wav": "WAV (RIFF)", "iq": "SigMF" if suffix == ".sigmf-data" else "None (headerless)"}["wav" if suffix == ".wav" else "iq"],
-                     "conf": 1, "method": "blind", "note": ""},
-                    {"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": "from the header" if suffix != "" else ""},
-                    {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
-                    {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": "recorded in the certificate"},
-                ]}
-        res = build(x, fs_, recipe, body, log, meta)
+        res = build(x, fs_, recipe, body, log, _meta(name, path, x, fs_, sha, dtype, fc_hz))
+        res["scenario"]["view"].update(extra)
         res["scenario"]["cert"].update({"key": f"ed25519:{job.cert.get('key_id')}", "sig": (job.cert.get("signature") or "UNSIGNED")[:12] + "…",
                                         "issued": job.cert["issued_utc"]})
         job.result = res
@@ -146,6 +161,12 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
             item = next((s for s in manifest if s["id"] == sample), None)
             if item is None:
                 raise HTTPException(404, "no such sample")
+            if item["kind"] == "stitch":                          # several captures of one emitter
+                members = [(samples_dir / m["file"], m["label"]) for m in item["members"]]
+                job = Job(jid, item["name"], members[0][0])
+                jobs[jid] = job
+                threading.Thread(target=_run, args=(job, None, None, None, members), daemon=True).start()
+                return {"id": jid}
             src, name = samples_dir / item["file"], item["name"]
         elif path:
             src = Path(path)

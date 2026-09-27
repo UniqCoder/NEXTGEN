@@ -96,15 +96,21 @@ def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, drop_db: float = 2
     f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
     sm = np.convolve(psd, np.ones(9) / 9, "same")
     k = int(sm.argmax())
-    # below ~20 dB in-band SNR the drop_db level sits under the noise floor; stop 6 dB above the floor instead
+    # below ~20 dB in-band SNR the drop_db level sits under the noise floor; stop 3 dB above the floor instead
     # (on receiver audio the median bin is the empty mirror half, so this term never binds there)
-    thresh = max(sm[k] * 10 ** (-drop_db / 10), float(np.median(sm)) * 10 ** 0.6)
-    lo = k
-    while lo > 0 and sm[lo - 1] > thresh:
-        lo -= 1
-    hi = k
-    while hi < nper - 1 and sm[hi + 1] > thresh:
-        hi += 1
+    thresh = max(sm[k] * 10 ** (-drop_db / 10), float(np.median(sm)) * 10 ** 0.3)
+    above = sm > thresh
+    gap = 8                                                  # bridge short dips: at low SNR in-band bins straddle the level
+    lo = hi = k
+    if above[k]:                                             # (pure noise: nothing clears the level, the band is one bin)
+        while lo > 0 and above[max(0, lo - gap): lo].any():
+            lo -= 1
+        while not above[lo]:
+            lo += 1
+        while hi < nper - 1 and above[hi + 1: hi + 1 + gap].any():
+            hi += 1
+        while not above[hi]:
+            hi -= 1
     band = slice(lo, hi + 1)
     c = nper // 2                                           # f == 0
     side = slice(c, nper) if f[k] >= 0 else slice(0, c + 1)  # same side as the band, skipping the

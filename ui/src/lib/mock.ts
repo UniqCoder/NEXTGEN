@@ -75,6 +75,12 @@ export const SCENARIO = {
       standards: { name: string; ppm: number | null }[]
     } | null,
     layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
+    stitch: null as {
+      reference: string; pooled_frames: number; pooled_seconds: number
+      sensors: { name: string; seconds: number; fs_hz: number; alone: { verdict: string; headline: string }; associated: boolean
+        frames: number; proof?: string[]; crc_ok?: number; crc_frames?: number; clock_ppm?: number; cfo_hz?: number
+        esn0_db?: number; gain_db?: number; inverted?: boolean; consistent?: boolean; excluded?: boolean }[]
+    } | null,
     sufficiency: null as {
       verdict: 'sufficient' | 'more_data' | 'not_data_limited'; headline: string; have_s: number
       entries: { decision: string; status: string; evidence: string; limit: string | null; need_s: number[] | null; min_s?: number[]; blocking?: boolean }[]

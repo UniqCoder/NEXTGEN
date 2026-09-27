@@ -5,6 +5,7 @@ import { go, useRoute } from '../lib/router'
 import { STEPS, setState, stepStatus, useApp } from '../lib/store'
 import { Knob, Seg } from './ui'
 import { Sufficiency } from './Sufficiency'
+import { Stitch } from './Stitch'
 
 /** Shown instead of a step's normal content once the blind search comes back undecided: no recipe
  * survived, so there is nothing to de-interleave, decode or prove — only what was measured. */
@@ -27,6 +28,7 @@ export function Undecided({ reason, inline }: { reason: string | null; inline?: 
           </tbody>
         </table>
       )}
+      <Stitch />
       <Sufficiency />
       <p className="small dimmer" style={{ marginTop: 14 }}>See the real spectrum and these measurements on the <a href="#/signal">Signal</a> step.</p>
     </div>

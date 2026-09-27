@@ -47,6 +47,14 @@ SYNTH = [
      dict(seed=11, esn0_db=12.0, recipe=variant(9, ["753", "561"], 48, 32, None, sps=6.37))),
 ]
 
+SENSORS = [  # id, label, seed, samples/symbol, Es/N0, frames, clock ppm, gain, tuning Hz, inverted, recipe
+    ("syn-sensor-a", "Sensor A · 76.8 kHz", 201, 8.0, 7.5, 7, 0.0, 0.3, 120.0, False, None),
+    ("syn-sensor-b", "Sensor B · 61.152 kHz, inverted", 202, 6.37, 6.5, 6, -25.0, 0.05, -310.0, True, None),
+    ("syn-sensor-c", "Sensor C · 96 kHz", 203, 10.0, 7.0, 6, 40.0, 1.2, 55.0, False, None),
+    ("syn-sensor-decoy", "Decoy · another emitter", 204, 8.0, 8.0, 6, 0.0, 0.3, 0.0, False,
+     variant(5, ["23", "35"], 24, 64, Scrambler(poly_exponents=[9, 5, 0], seed=0x1AB))),
+]
+
 REAL = [
     ("real-stanag4285-idle", "STANAG4285_IDLE.mp3", "STANAG 4285 · idle (HF, 8PSK, 2400 Bd)", "STANAG_4285",
      "NATO HF serial modem, 1800 Hz carrier in the receiver audio."),
@@ -71,6 +79,17 @@ def main():
         data = write_sigmf(OUT / sid, x, recipe.sample_rate_hz, {"sanjaya:generator": truth["generator"]})
         items.append({"id": sid, "name": name, "kind": "synthetic", "file": data.name, "what": what,
                       "truth": {k: truth[k] for k in ("esn0_db", "cfo_hz", "clock_ppm")}, "source": "SANJAYA-Gen (seeded)"})
+    # one emitter, three sensors (+ a capture of a different emitter with the same sync marker and frame length)
+    members = []
+    for sid, label, seed, sps, esn0, frames, ppm, gain, cfo, inv, rec in SENSORS:
+        x, r, *_ = generate(seed=seed, esn0_db=esn0, n_frames=frames, recipe=rec or gen0_recipe(sps=sps),
+                            clock_ppm=ppm, gain=gain, cfo_hz=cfo)
+        data = write_sigmf(OUT / sid, np.conj(x) if inv else x, r.sample_rate_hz, {"sanjaya:generator": "sensor view"})
+        members.append({"file": data.name, "label": label})
+    items.append({"id": "stitch-3-sensors", "name": "One emitter, three sensors (+1 decoy) · evidence stitching",
+                  "kind": "stitch", "members": members, "source": "SANJAYA-Gen (seeded)",
+                  "what": "Each capture is too short alone; pooled they decode, each is proven, and the decoy from "
+                          "another emitter is caught. Sensor clocks, tuning, gains and an inverted spectrum are measured."})
     rng = np.random.default_rng(0)
     noise = (rng.standard_normal(250_000) + 1j * rng.standard_normal(250_000)).astype(np.complex64) * 0.05
     data = write_sigmf(OUT / "syn-noise-only", noise, 76_800.0, {"sanjaya:generator": "noise"})

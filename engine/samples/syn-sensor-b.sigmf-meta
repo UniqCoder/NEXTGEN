@@ -1,0 +1,15 @@
+{
+ "global": {
+  "core:datatype": "cf32_le",
+  "core:sample_rate": 61152.0,
+  "core:version": "1.0.0",
+  "core:description": "SANJAYA-Gen",
+  "sanjaya:generator": "sensor view"
+ },
+ "captures": [
+  {
+   "core:sample_start": 0
+  }
+ ],
+ "annotations": []
+}
