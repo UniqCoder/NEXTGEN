@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { Conf, MethodTag, Panel, Scrub } from '../components/ui'
 import { Step } from '../components/Step'
 import { Sufficiency } from '../components/Sufficiency'
+import { Stitch } from '../components/Stitch'
 import { RankProfile } from '../components/Plots'
 import { CONV_CANDIDATES, FEC_FAMILIES, INTERLEAVER_TYPES, SCENARIO } from '../lib/engine'
 import { useApp } from '../lib/store'
@@ -125,6 +126,7 @@ function DecodingReady() {
           </div>
         </section>
       </div>
+      {done && <Stitch />}
       {done && <Sufficiency />}
     </Step>
   )

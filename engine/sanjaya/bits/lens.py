@@ -72,8 +72,9 @@ def find_counter(info: np.ndarray, slots: np.ndarray, min_frac: float = 0.9):
             if s < 0:
                 continue
             v = np.array([from_bits(r[s: e + 1]) for r in info], dtype=object)
-            ok = [((b - a) % (1 << w)) == d % (1 << w) for a, b, d in zip(v, v[1:], ds)]
-            if np.mean(ok) >= min_frac:
+            # a negative slot step marks a boundary between stitched captures: the gap there is unknown
+            ok = [((b - a) % (1 << w)) == d % (1 << w) for a, b, d in zip(v, v[1:], ds) if d > 0]
+            if ok and np.mean(ok) >= min_frac:
                 best = (s, w)
                 break
         if best:

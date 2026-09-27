@@ -105,13 +105,26 @@ def _search(x, fs, log, phy, led):
         raise SearchError(f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified; the v1 blind coding layer covers "
                           f"linear PSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
+    ys, sps, t0, cfo, theta, rs, beta = measure_phy(x, fs)
+    log.append(Step("measure", f"symbol rate {rs:.3f} Bd, roll-off {beta:.2f}, CFO {cfo:.2f} Hz", "measured",
+                    {"timing_fit_hz": rs, "rolloff_psd": beta, "cfo_hz": cfo}))
+    return search_structure(x, fs, (ys, sps, t0, cfo, theta), rs, beta, log, led)
+
+
+def measure_phy(x, fs):
+    """QPSK front-end of the search: (symbols, sps, t0, cfo, theta, symbol rate, roll-off)."""
     rs0 = symbol_rate_blind(x, fs)
     cfo0 = cfo_power(x, fs, 4)
     beta = round(rolloff_psd(x, fs, rs0, cfo0), 2)
     ys, sps, t0, cfo, theta = symbols(x, fs, fs / rs0, beta)
-    rs = fs / sps
-    log.append(Step("measure", f"symbol rate {rs:.3f} Bd, roll-off {beta:.2f}, CFO {cfo:.2f} Hz", "measured",
-                    {"cyclic_line_hz": rs0, "timing_fit_hz": rs, "rolloff_psd": beta, "cfo_hz": cfo}))
+    return ys, sps, t0, cfo, theta, fs / sps, beta
+
+
+def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
+    """Frame, code, interleaver, scrambler and fields from a derotated symbol stream. x may be None when the
+    stream is pooled from several captures (stitch.py); slot_of(starts) then maps frame starts to frame slots,
+    with a negative step where one capture ends and the next begins (the gap between them is unknown)."""
+    ys, sps, t0, cfo, theta = pre
     # 3 FRAME / SYNC -------------------------------------------------------------------------------------------
     fr = discover_frames(ys)
     if fr is None:
@@ -226,7 +239,7 @@ def _search(x, fs, log, phy, led):
     # structure decides (an inverted counter decrements), and the loser is recorded as an equivalence.
     scored = []
     for key, h, L, tmpl, body, conj, k, sc, tf in tied:
-        recipe, info_log = _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, h, sc, tf)
+        recipe, info_log = _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, h, sc, tf, slot_of)
         f = recipe.framing
         score = (f.crc is not None) + any(fd.kind == "counter" for fd in f.fields) + recipe.fec.terminated
         scored.append((score, -key[1], recipe, info_log, h, L, conj, k, sc))
@@ -257,7 +270,7 @@ def _search(x, fs, log, phy, led):
     return recipe, log
 
 
-def _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, code, sc, tf):
+def _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, code, sc, tf, slot_of=None):
     """Build the recipe for one hypothesis: decode under a provisional framing, detect termination,
     then let Bit-Lens find the fields and the CRC."""
     sname, sexps, sseed, _ = sc
@@ -276,7 +289,7 @@ def _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, code, sc, tf
                                        "framing": base.framing.model_copy(update={"fields": [Field(name="data", bits=T - code.K + 1, kind="payload")]})})
     fe = frontend(x, base, pre=pre)
     info = unwrap(fe, base).info
-    fields, crc = lens_fields(info, (fe.starts - fe.starts[0]) // fe.period)
+    fields, crc = lens_fields(info, slot_of(fe.starts) if slot_of else (fe.starts - fe.starts[0]) // fe.period)
     recipe = base.model_copy(update={"framing": base.framing.model_copy(update={"fields": fields, "crc": crc})})
     return recipe, [Step("structure", ", ".join(f"{f.name}[{f.bits}]" for f in fields), "blind",
                          {"terminated": term, "crc": None if crc is None else f"width {crc.width} poly 0x{crc.poly:X} init 0x{crc.init:X}"})]

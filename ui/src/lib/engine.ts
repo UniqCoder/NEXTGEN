@@ -18,7 +18,7 @@ export interface JobStatus {
 }
 
 export interface SampleMeta {
-  id: string; name: string; kind: 'synthetic' | 'real'; what: string; source: string; duration_s?: number
+  id: string; name: string; kind: 'synthetic' | 'real' | 'stitch'; what: string; source: string; duration_s?: number
 }
 
 /** The built-in demo library (engine/samples), fetched once a job-capable engine is reachable. */

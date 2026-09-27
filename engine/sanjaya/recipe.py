@@ -92,7 +92,7 @@ class CertificateBody(BaseModel):
     config_hash: str
     input_sha256: str
     recipe: Recipe
-    recipe_source: Literal["search", "supplied"]
+    recipe_source: Literal["search", "supplied", "stitch"]
     verdict: Literal["pass", "fail"]
     layers: list[LayerVerdict]
     near_misses: list[NearMiss]

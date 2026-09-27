@@ -78,6 +78,31 @@
   "source": "SANJAYA-Gen (seeded)"
  },
  {
+  "id": "stitch-3-sensors",
+  "name": "One emitter, three sensors (+1 decoy) · evidence stitching",
+  "kind": "stitch",
+  "members": [
+   {
+    "file": "syn-sensor-a.sigmf-data",
+    "label": "Sensor A · 76.8 kHz"
+   },
+   {
+    "file": "syn-sensor-b.sigmf-data",
+    "label": "Sensor B · 61.152 kHz, inverted"
+   },
+   {
+    "file": "syn-sensor-c.sigmf-data",
+    "label": "Sensor C · 96 kHz"
+   },
+   {
+    "file": "syn-sensor-decoy.sigmf-data",
+    "label": "Decoy · another emitter"
+   }
+  ],
+  "source": "SANJAYA-Gen (seeded)",
+  "what": "Each capture is too short alone; pooled they decode, each is proven, and the decoy from another emitter is caught. Sensor clocks, tuning, gains and an inverted spectrum are measured."
+ },
+ {
   "id": "syn-noise-only",
   "name": "Pure noise",
   "kind": "synthetic",
