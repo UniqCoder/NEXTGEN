@@ -75,6 +75,10 @@ export const SCENARIO = {
       standards: { name: string; ppm: number | null }[]
     } | null,
     layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
+    compiler: null as {
+      passed: boolean; frames: number; frames_equal?: number; bits_compared?: number; receiver_crc_ok?: number
+      receiver_seconds?: number; error?: string; other_sensors?: { name: string; frames: number; crc_ok: number; error: string | null }[]
+    } | null,
     stitch: null as {
       reference: string; pooled_frames: number; pooled_seconds: number
       sensors: { name: string; seconds: number; fs_hz: number; alone: { verdict: string; headline: string }; associated: boolean

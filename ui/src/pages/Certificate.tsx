@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import { Mark } from '../components/ui'
 import { Undecided } from '../components/Step'
 import { exportJSON } from '../components/Palette'
-import { FRAME, SCENARIO, fmtBytes } from '../lib/engine'
+import { FRAME, SCENARIO, downloadReceiver, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
 import { useApp } from '../lib/store'
 
@@ -42,6 +42,7 @@ export function Certificate() {
         <button className="btn sm" onClick={() => print()}>PDF</button>
         <button className="btn sm" onClick={() => exportJSON()}>JSON report</button>
         <button className="btn sm" onClick={() => exportJSON('sigmf')}>SigMF</button>
+        {SCENARIO.view.compiler?.passed && <button className="btn sm primary" onClick={() => void downloadReceiver()}>Receiver (.zip)</button>}
         <button className="btn sm" onClick={() => go('/frames')}>Frames · schema</button>
       </div>
 
@@ -100,6 +101,22 @@ export function Certificate() {
           ))}
         </L>
         <L className="small dim">{SCENARIO.text.frameLine}</L>
+
+        {SCENARIO.view.compiler && (
+          <>
+            <L className="cert-sec"><span className="label">Compiled receiver · for the designated sensors</span></L>
+            <L className="kv">
+              <span>Release gate</span>
+              <span className="mono">{SCENARIO.view.compiler.passed
+                ? `PASSED · the standalone receiver reproduced SANJAYA's bits exactly: ${SCENARIO.view.compiler.frames_equal}/${SCENARIO.view.compiler.frames} frames, ${SCENARIO.view.compiler.bits_compared?.toLocaleString('en-IN')} bits`
+                : `FAILED · not released (${SCENARIO.view.compiler.error ?? 'bits differ'})`}</span>
+              <span>Package</span><span className="mono">receiver.py (NumPy only) · recipe.sigmf-meta · sanjaya_receiver.grc (GNU Radio, not executed here)</span>
+              {SCENARIO.view.compiler.other_sensors?.map((o) => (
+                <span key={o.name} style={{ display: 'contents' }}><span>{o.name}</span><span className="mono">{o.error ? 'receiver error' : `same receiver on this sensor's file: ${o.crc_ok}/${o.frames} CRC-valid frames`}</span></span>
+              ))}
+            </L>
+          </>
+        )}
 
         <L className="cert-sec"><span className="label">Signature</span></L>
         <L className="cert-sig">
