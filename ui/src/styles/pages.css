@@ -347,3 +347,9 @@ details summary { cursor: pointer; color: var(--bone-2); }
 .suff-h { margin: 8px 0 10px; font-size: 15px; line-height: 1.45; }
 .empty.inline { height: auto; justify-content: flex-start; padding: 4px 0 28px; }
 .empty.inline h2 { font-size: var(--t-28, 28px); }
+
+.verify-page { max-width: 720px; padding: 32px 40px; }
+.verify-result { padding: 16px 18px; border: 1px solid var(--line-2); }
+.verify-result.pass { border-color: var(--proof, var(--signal)); }
+.verify-result.fail { border-color: var(--fault, #c0392b); }
+.verify-result .stamp { font-size: var(--t-20); letter-spacing: 0.04em; }

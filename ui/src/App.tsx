@@ -16,6 +16,7 @@ import { Scene } from './pages/Scene'
 import { Genome } from './pages/Genome'
 import { Challenge } from './pages/Challenge'
 import { Compliance } from './pages/Compliance'
+import { Verify } from './pages/Verify'
 
 const ROUTES: Record<string, () => React.ReactNode> = {
   '/ingest': Ingest,
@@ -28,6 +29,7 @@ const ROUTES: Record<string, () => React.ReactNode> = {
   '/genome': Genome,
   '/challenge': Challenge,
   '/compliance': Compliance,
+  '/verify': Verify,
 }
 
 const typing = (e: KeyboardEvent) => {

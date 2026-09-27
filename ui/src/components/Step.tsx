@@ -103,6 +103,7 @@ export const TOOLS = [
   { path: '/genome', n: 'Standards', d: 'Match against 31 named standards' },
   { path: '/challenge', n: 'Challenge', d: 'Full-screen blind demo for judges' },
   { path: '/compliance', n: 'Compliance', d: 'Every problem-statement clause, mapped' },
+  { path: '/verify', n: 'Verify', d: 'Independent re-check: drop a certificate and its file' },
 ]
 
 /** Small anchored popover that closes on outside click or Escape. */
