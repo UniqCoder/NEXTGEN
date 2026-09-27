@@ -81,9 +81,13 @@ def rolloff_psd(x: np.ndarray, fs: float, symbol_rate: float, cfo_hz: float, gri
 __all__ = ["cfo_power", "symbol_rate_blind", "timing_fit", "rolloff_psd", "rrc"]
 
 
-def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, rise_db: float = 6.0):
+def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, drop_db: float = 20.0):
     """Strongest emission in the averaged PSD: (f_lo, f_hi, centre, in-band SNR dB, noise floor dB/bin).
-    The band is the contiguous run of bins around the peak that sits rise_db above the median floor."""
+    The band is the classic X-dB-bandwidth: the contiguous run of bins around the peak that stays within
+    drop_db of it. (A floor-relative threshold breaks on real audio, whose out-of-band level is nowhere
+    near flat: the analytic signal's empty mirror half sits near numerical zero while the occupied band
+    itself can span most of the populated half, so any floor estimated from "populated" bins lands inside
+    the signal, not below it.)"""
     n = x.size // nper
     if n == 0:
         return None
@@ -91,20 +95,23 @@ def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, rise_db: float = 6
     psd = np.fft.fftshift((np.abs(np.fft.fft(seg, axis=1)) ** 2).mean(0))
     f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
     sm = np.convolve(psd, np.ones(9) / 9, "same")
-    populated = sm > 1e-4 * np.percentile(sm, 90)          # analytic audio leaves one half-band empty
-    floor = float(np.percentile(sm[populated], 25))
     k = int(sm.argmax())
-    above = sm > floor * 10 ** (rise_db / 10)
+    thresh = sm[k] * 10 ** (-drop_db / 10)
     lo = k
-    while lo > 0 and above[lo - 1]:
+    while lo > 0 and sm[lo - 1] > thresh:
         lo -= 1
     hi = k
-    while hi < nper - 1 and above[hi + 1]:
+    while hi < nper - 1 and sm[hi + 1] > thresh:
         hi += 1
     band = slice(lo, hi + 1)
+    c = nper // 2                                           # f == 0
+    side = slice(c, nper) if f[k] >= 0 else slice(0, c + 1)  # same side as the band, skipping the
+    idx = np.arange(nper)[side]                              # analytic signal's empty mirror half
+    outside = sm[side][(idx < lo) | (idx > hi)]
+    floor = float(np.median(outside)) if outside.size else float(sm.min())
     p_band = float(psd[band].sum() - floor * (hi - lo + 1))
-    snr = 10 * np.log10(max(p_band, 1e-30) / (floor * (hi - lo + 1)))
-    return float(f[lo]), float(f[hi]), float((f[lo] + f[hi]) / 2), float(snr), float(10 * np.log10(floor))
+    snr = 10 * np.log10(max(p_band, 1e-30) / max(floor * (hi - lo + 1), 1e-30))
+    return float(f[lo]), float(f[hi]), float((f[lo] + f[hi]) / 2), float(snr), float(10 * np.log10(max(floor, 1e-30)))
 
 
 def cyclic_line_strength(x: np.ndarray, fs: float, rate_hz: float) -> float:
@@ -144,8 +151,8 @@ def band_measure(x: np.ndarray, fs: float, f_lo: float, f_hi: float):
     f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
     inb = np.abs(f) <= bw / 2
     Sb, fb = S[inb], f[inb]
-    fl = float(np.percentile(Sb, 20))
+    fl = float(np.percentile(Sb, 35))
     gap = max(1, int((bw / 40) / (fs / nper)))
-    peaks = [i for i in range(1, Sb.size - 1) if Sb[i] > 10 * fl and Sb[i] == Sb[max(0, i - gap): i + gap + 1].max()]
+    peaks = [i for i in range(1, Sb.size - 1) if Sb[i] > 12 * fl and Sb[i] == Sb[max(0, i - gap): i + gap + 1].max()]
     out["tones_hz"] = [float(fb[i] + fc) for i in peaks]
     return out

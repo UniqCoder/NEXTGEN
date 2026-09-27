@@ -10,9 +10,21 @@ from ..coding import block_deinterleave, syndrome_rate_half
 from ..coding.blind import dual_spectrum, divisors
 from ..proof import resynthesise
 from ..bits import from_bits
+from ..measure import occupied_band, band_measure
 
 ROWS, BINS = 360, 1024
 SUP = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def P(key, label, value, method, stage, evidence, unit=None, conf=None, cands=None, set_=None):
+    d = {"key": key, "label": label, "value": value, "method": method, "conf": conf, "stage": stage, "evidence": evidence}
+    if unit:
+        d["unit"] = unit
+    if cands:
+        d["cands"] = cands
+    if set_:
+        d["set"] = set_
+    return d
 
 
 def spectrogram_db(x: np.ndarray) -> np.ndarray:
@@ -80,16 +92,6 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
     code_str = f"CC K={fec.K} r½ ({','.join(fec.generators_octal)})₈"
     step = {s.stage: s for s in log} if log else {}
     ev = lambda k, default: (step[k].finding if k in step else default)
-
-    def P(key, label, value, method, stage, evidence, unit=None, conf=None, cands=None, set_=None):
-        d = {"key": key, "label": label, "value": value, "method": method, "conf": conf, "stage": stage, "evidence": evidence}
-        if unit:
-            d["unit"] = unit
-        if cands:
-            d["cands"] = cands
-        if set_:
-            d["set"] = set_
-        return d
 
     src = "search" if log else "supplied recipe"
     params = {
@@ -269,6 +271,51 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
         "crc": [{"name": f"CRC-{fr.crc.width} (solved)", "poly": fr.crc.poly, "init": fr.crc.init, "ok": int(uw.crc_ok.sum()), "frames": len(uw.crc_ok)}] if fr.crc else [],
         "conv": conv, "fecFamilies": fam, "interleaverTypes": ilv, "rankProfile": prof,
         "spectrogram": {"full": S_full, "resid": S_res, "fail": S_fail, "rowPower": row_power.astype(np.float32)},
+    }
+
+
+def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str) -> dict:
+    """No recipe survived the search: still show the real spectrogram and whatever spectral measurements
+    stand on their own (occupied band, candidate symbol/tone rate), instead of returning nothing.
+    An honest 'undecided, because...', not a guess (PROTOTYPE_PLAN §5)."""
+    S_full = spectrogram_db(x)
+    dur = x.size / fs
+    params, measured = {}, None
+    band = occupied_band(x, fs)
+    if band:
+        lo, hi, centre, snr, floor = band
+        bm = band_measure(x, fs, lo, hi)
+        measured = {"band_lo_hz": lo, "band_hi_hz": hi, "centre_hz": centre, "snr_db": round(snr, 1),
+                    "floor_db": round(floor, 1), "rate_hz": bm.get("rate_hz"), "tones_hz": bm.get("tones_hz", [])}
+        params["bw"] = P("bw", "Occupied bandwidth", f"{(hi - lo) / 1e3:.2f}", "blind", 0,
+                         f"−20 dB bandwidth around the strongest emission (centre {centre:,.0f} Hz).".replace(",", " "), unit="kHz")
+        params["snr"] = P("snr", "In-band SNR", f"{snr:.1f}", "blind", 0,
+                          "Occupied-band power over the median level measured outside it.", unit="dB")
+        if bm.get("rate_hz"):
+            params["baud"] = P("baud", "Candidate rate", f"{bm['rate_hz']:.2f}", "blind", 0,
+                               "Strongest |x|² cyclic line inside the band — a candidate symbol clock, not yet "
+                               "the certified one (no recipe passed the proof).", unit="Bd")
+        if bm.get("tones_hz"):
+            params["tones"] = P("tones", "Candidate tones", ", ".join(f"{t:,.0f}".replace(",", " ") for t in bm["tones_hz"]), "blind", 0,
+                                "Discrete spectral peaks inside the band — consistent with FSK if several recur evenly spaced.", unit="Hz")
+    emitters = [{"id": "E1", "f0": measured["band_lo_hz"], "f1": measured["band_hi_hz"], "t0": 0.0, "t1": 1.0,
+                 "snr": measured["snr_db"], "cls": "Undecided", "std": "No named standard", "state": "undecided",
+                 "label": "E1 · undecided", "sub": f"{measured['snr_db']:.0f} dB SNR · not yet decoded", "fc": measured["centre_hz"]}] if measured else []
+    return {
+        "scenario": {
+            "file": {k: meta[k] for k in ("name", "path", "size", "sha256", "format", "route")} | {"duration": dur},
+            "forensics": meta["forensics"],
+            "params": params,
+            "emitters": emitters,
+            "proof": {},
+            "cert": {},
+            "view": {"lo": float(np.percentile(S_full, 5)) - 9, "range": float(np.ceil(np.percentile(S_full, 99.9) - np.percentile(S_full, 5))) + 16,
+                     "gridSeconds": _grid_step(dur), "verdict": "undecided", "reason": reason, "measured": measured, "source": "search",
+                     "layers": [], "equivalences": []},
+            "text": {"heroCap": f"{fs / 1e3:g} kHz · {dur:.1f} s", "format": f"{meta['format']} · {fs / 1e3:g} kHz"},
+        },
+        "spec": {"bins": BINS, "rows": ROWS, "fs": fs},
+        "spectrogram": {"full": S_full},
     }
 
 
