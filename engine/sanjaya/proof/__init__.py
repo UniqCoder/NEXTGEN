@@ -158,14 +158,19 @@ def structure_layer(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict
     n_slots = int(slots[-1]) + 1
     s1 = len(fe.starts) / n_slots
     F, n_ok = len(uw.crc_ok), int(uw.crc_ok.sum())
-    w = recipe.framing.crc.width
-    p_s2 = float(binom.sf(n_ok - 1, F, 2.0 ** -w)) if n_ok else 1.0
-    stats = {"S1_frames": float(F), "S1_slot_frac": s1, "S2_crc_pass": float(n_ok), "S2_crc_frac": n_ok / F, "S2_chance_p": p_s2}
+    stats = {"S1_frames": float(F), "S1_slot_frac": s1}
     fails, nd = [], []
     if len(fe.starts) < 3 or s1 < TH["s1_min_frac"]:
         fails.append("S1 sync marker does not recur at the frame period")
-    if p_s2 > TH["s2_max_p"]:
-        fails.append("S2 CRC passes are at chance level")
+    p_s2 = 1.0
+    if recipe.framing.crc is None:
+        nd.append("S2 no CRC field; S4 scrambler reported as an equivalence class")
+    else:
+        w = recipe.framing.crc.width
+        p_s2 = float(binom.sf(n_ok - 1, F, 2.0 ** -w)) if n_ok else 1.0
+        stats.update(S2_crc_pass=float(n_ok), S2_crc_frac=n_ok / F, S2_chance_p=p_s2)
+        if p_s2 > TH["s2_max_p"]:
+            fails.append("S2 CRC passes are at chance level")
     ctr = next((f for f in recipe.framing.fields if f.kind == "counter"), None)
     if ctr is None:
         nd.append("S3 no counter field")
@@ -208,9 +213,11 @@ def near_miss_battery(x: np.ndarray, recipe: Recipe, fe: FrontEnd) -> list[NearM
         ("coding", "generator neighbour (171,135)" if g != ["171", "135"] else "generator neighbour (171,133)",
          {"fec": fec.model_copy(update={"generators_octal": ["171", "135"] if g != ["171", "135"] else ["171", "133"]})}),
         ("coding", f"interleaver transposed {il.cols}x{il.rows}", {"interleaver": il.model_copy(update={"rows": il.cols, "cols": il.rows})}),
-        ("structure", "scrambler seed shifted", {"scrambler": sc.model_copy(update={"seed": sc.seed ^ 1})}),
-        ("structure", "CRC init variant", {"framing": m.framing.model_copy(update={"crc": cr.model_copy(update={"init": cr.init ^ ((1 << cr.width) - 1)})})}),
     ]
+    if sc is not None:
+        cands.append(("structure", "scrambler seed shifted", {"scrambler": sc.model_copy(update={"seed": sc.seed ^ 1})}))
+    if cr is not None:
+        cands.append(("structure", "CRC init variant", {"framing": m.framing.model_copy(update={"crc": cr.model_copy(update={"init": cr.init ^ ((1 << cr.width) - 1)})})}))
     out = []
     for layer, name, upd in cands:
         r2 = recipe.model_copy(update=upd)

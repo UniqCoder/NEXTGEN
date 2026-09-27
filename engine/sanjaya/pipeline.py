@@ -82,9 +82,10 @@ def frame_sync(ys: np.ndarray, asm: np.ndarray, period: int):
     return conj, starts, cn[starts], c[starts]
 
 
-def frontend(x: np.ndarray, recipe: Recipe) -> FrontEnd:
+def frontend(x: np.ndarray, recipe: Recipe, pre=None) -> FrontEnd:
+    """pre: an already computed symbols() tuple for the same PHY (lets the search reuse it)."""
     fs, sps_nom, beta = recipe.sample_rate_hz, sps_of(recipe), recipe.modulation.rolloff
-    ys, sps, t0, cfo, theta = symbols(x, fs, sps_nom, beta)
+    ys, sps, t0, cfo, theta = pre if pre is not None else symbols(x, fs, sps_nom, beta)
     asm = asm_symbols(recipe)
     check_geometry(recipe)
     period = asm.size + recipe.interleaver.rows * recipe.interleaver.cols // 2
@@ -137,7 +138,7 @@ def parse_fields(recipe: Recipe, info: np.ndarray) -> tuple[list[dict], np.ndarr
         pos, vals, ok = 0, {}, False
         for f in recipe.framing.fields:
             seg = row[pos: pos + f.bits]
-            if f.kind == "crc":
+            if f.kind == "crc" and cr is not None:
                 ok = from_bits(seg) == crc_bits(row[:pos], cr.width, cr.poly, cr.init, cr.refin, cr.refout, cr.xorout)
             vals[f.name] = np.packbits(seg).tobytes().hex() if f.kind == "payload" else from_bits(seg)
             pos += f.bits

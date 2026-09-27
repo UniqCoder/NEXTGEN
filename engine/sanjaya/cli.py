@@ -21,17 +21,29 @@ def _analyze(a):
     from .recipe import Recipe
     from .pipeline import frontend, unwrap
     from .proof.certificate import build_body, sign
-    if not a.recipe:
-        sys.exit("blind search (hypothesis-tree orchestrator) arrives at G2; for now pass --recipe RECIPE.json")
     x, fs, data = load(a.file, a.fs, a.dtype)
-    recipe = Recipe.model_validate_json(Path(a.recipe).read_text())
-    if abs(recipe.sample_rate_hz - fs) > 1e-6 * fs:
-        sys.exit(f"recipe sample rate {recipe.sample_rate_hz} != file sample rate {fs}")
-    t = time.perf_counter()
-    body = build_body(x, recipe, sha256_file(data))
-    cert = sign(body)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    t = time.perf_counter()
+    if a.recipe:
+        recipe, source = Recipe.model_validate_json(Path(a.recipe).read_text()), "supplied"
+        if abs(recipe.sample_rate_hz - fs) > 1e-6 * fs:
+            sys.exit(f"recipe sample rate {recipe.sample_rate_hz} != file sample rate {fs}")
+    else:
+        from .search import blind_search, SearchError
+        try:
+            recipe, log = blind_search(x, fs)
+        except SearchError as e:
+            print(f"UNDECIDED: {e}")
+            (out / "search.json").write_text(json.dumps({"undecided": str(e)}, indent=1))
+            sys.exit(2)
+        source = "search"
+        (out / "search.json").write_text(json.dumps([s.__dict__ for s in log], indent=1, default=str))
+        print(f"blind search ({time.perf_counter() - t:.1f} s):")
+        for s in log:
+            print(f"  {s.stage:10s} [{s.method}] {s.finding}")
+    body = build_body(x, recipe, sha256_file(data), source)
+    cert = sign(body)
     (out / "certificate.json").write_text(json.dumps(cert, indent=1))
     (out / "recipe.json").write_text(recipe.model_dump_json(indent=1))
     uw = unwrap(frontend(x, recipe), recipe)

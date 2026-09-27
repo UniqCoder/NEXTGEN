@@ -38,7 +38,7 @@ def build_info(recipe: Recipe, counters: np.ndarray, payload: np.ndarray) -> np.
                 bits.append(to_bits(crc_bits(np.concatenate(bits), cr.width, cr.poly, cr.init, cr.refin, cr.refout, cr.xorout), f.bits))
                 crc_done = True
             else:
-                bits.append(np.zeros(f.bits, np.uint8))
+                bits.append(to_bits(f.value or 0, f.bits))
         assert crc_done
         rows.append(np.concatenate(bits))
     return np.array(rows, np.uint8)

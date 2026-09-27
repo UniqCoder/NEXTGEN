@@ -46,13 +46,14 @@ class Field(BaseModel):
     name: str
     bits: int = F(gt=0)
     kind: Literal["counter", "length", "payload", "crc", "fill"]
+    value: int | None = None           # constant value of a fill field (MSB-first); None = zeros
 
 
 class Framing(BaseModel):
     asm_hex: str                       # attached sync marker, sent uncoded at the PHY
     asm_position: Literal["phy"] = "phy"
     fields: list[Field]                # information bits of one frame, in order
-    crc: Crc                           # covers every field before the crc field
+    crc: Crc | None = None             # covers every field before the crc field
 
     @property
     def info_bits(self) -> int:
@@ -65,7 +66,7 @@ class Recipe(BaseModel):
     modulation: Modulation
     fec: ConvCode
     interleaver: Interleaver
-    scrambler: Scrambler
+    scrambler: Scrambler | None = None
     framing: Framing
 
 
