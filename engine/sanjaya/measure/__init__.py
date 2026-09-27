@@ -79,3 +79,73 @@ def rolloff_psd(x: np.ndarray, fs: float, symbol_rate: float, cfo_hz: float, gri
 
 
 __all__ = ["cfo_power", "symbol_rate_blind", "timing_fit", "rolloff_psd", "rrc"]
+
+
+def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, rise_db: float = 6.0):
+    """Strongest emission in the averaged PSD: (f_lo, f_hi, centre, in-band SNR dB, noise floor dB/bin).
+    The band is the contiguous run of bins around the peak that sits rise_db above the median floor."""
+    n = x.size // nper
+    if n == 0:
+        return None
+    seg = x[: n * nper].reshape(n, nper) * np.hanning(nper)
+    psd = np.fft.fftshift((np.abs(np.fft.fft(seg, axis=1)) ** 2).mean(0))
+    f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
+    sm = np.convolve(psd, np.ones(9) / 9, "same")
+    populated = sm > 1e-4 * np.percentile(sm, 90)          # analytic audio leaves one half-band empty
+    floor = float(np.percentile(sm[populated], 25))
+    k = int(sm.argmax())
+    above = sm > floor * 10 ** (rise_db / 10)
+    lo = k
+    while lo > 0 and above[lo - 1]:
+        lo -= 1
+    hi = k
+    while hi < nper - 1 and above[hi + 1]:
+        hi += 1
+    band = slice(lo, hi + 1)
+    p_band = float(psd[band].sum() - floor * (hi - lo + 1))
+    snr = 10 * np.log10(max(p_band, 1e-30) / (floor * (hi - lo + 1)))
+    return float(f[lo]), float(f[hi]), float((f[lo] + f[hi]) / 2), float(snr), float(10 * np.log10(floor))
+
+
+def cyclic_line_strength(x: np.ndarray, fs: float, rate_hz: float) -> float:
+    """How far the |x|^2 spectral line at rate_hz stands above its neighbourhood (ratio; ~1 = no line)."""
+    p = np.abs(x.astype(np.complex128)) ** 2
+    nfft = 1 << int(np.ceil(np.log2(4 * p.size)))
+    F = np.abs(np.fft.rfft(p - p.mean(), nfft)) ** 2
+    k = int(round(rate_hz / fs * nfft))
+    ring = np.r_[F[max(1, k - 400): k - 8], F[k + 9: k + 401]]
+    return float(F[max(0, k - 2): k + 3].max() / (np.median(ring) + 1e-30)) if ring.size else 0.0
+
+
+def band_measure(x: np.ndarray, fs: float, f_lo: float, f_hi: float):
+    """Measure one emission: shift it to 0 Hz, low-pass it to its band, then look for (a) a symbol-rate
+    line in |x|^2 (linear modulations) and (b) discrete tones (FSK). Returns a dict of what was found."""
+    from scipy.signal import firwin, lfilter
+    bw = max(f_hi - f_lo, 20.0)
+    fc = (f_lo + f_hi) / 2
+    y = rotate(x, -fc / fs)
+    taps = firwin(257, min(0.99, 0.6 * bw / (fs / 2)))
+    y = lfilter(taps, 1.0, y)[257:].astype(np.complex64)
+    out = {"centre_hz": fc, "bandwidth_hz": bw}
+    p = np.abs(y.astype(np.complex128)) ** 2
+    nfft = 1 << int(np.ceil(np.log2(4 * p.size)))
+    F = np.abs(np.fft.rfft(p - p.mean(), nfft)) ** 2
+    fr = np.arange(F.size) * fs / nfft
+    sel = (fr > 0.15 * bw) & (fr < 1.3 * bw)
+    if sel.any():
+        k = int(np.flatnonzero(sel)[F[sel].argmax()])
+        ring = np.r_[F[max(1, k - 400): k - 8], F[k + 9: k + 401]]
+        strength = float(F[k] / (np.median(ring) + 1e-30)) if ring.size else 0.0
+        out.update(rate_hz=float(_peak(F, k) * fs / nfft), rate_strength=strength)
+    # tones: local maxima of the in-band spectrum, 10 dB over its floor, at least bw/40 apart
+    nper = 4096 if y.size >= 4096 * 4 else 1024
+    seg = y[: y.size // nper * nper].reshape(-1, nper) * np.hanning(nper)
+    S = np.fft.fftshift((np.abs(np.fft.fft(seg, axis=1)) ** 2).mean(0))
+    f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
+    inb = np.abs(f) <= bw / 2
+    Sb, fb = S[inb], f[inb]
+    fl = float(np.percentile(Sb, 20))
+    gap = max(1, int((bw / 40) / (fs / nper)))
+    peaks = [i for i in range(1, Sb.size - 1) if Sb[i] > 10 * fl and Sb[i] == Sb[max(0, i - gap): i + gap + 1].max()]
+    out["tones_hz"] = [float(fb[i] + fc) for i in peaks]
+    return out

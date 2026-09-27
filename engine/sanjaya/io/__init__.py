@@ -66,8 +66,8 @@ def sha256_file(path: str | Path) -> str:
 
 
 def read_wav(path: str | Path) -> tuple[np.ndarray, float]:
-    """PCM / float WAV. Two channels are read as I/Q; one channel as real samples (the spectrum is then
-    mirrored; WAV-Lifting, C7, recovers complex baseband later). RF64 / auxi chunks arrive with WP01."""
+    """PCM / float WAV. Two channels are read as I/Q; one channel (receiver audio) is lifted to its analytic
+    signal, so an SSB audio tone at +1.8 kHz stays at +1.8 kHz with no mirror image. RF64 / auxi: WP01."""
     from scipy.io import wavfile
     fs, d = wavfile.read(path, mmap=True)
     d = np.asarray(d)
@@ -77,5 +77,9 @@ def read_wav(path: str | Path) -> tuple[np.ndarray, float]:
         v = (v - 127.5) / 127.5
     else:
         v *= scale
-    x = (v[:, 0] + 1j * v[:, 1]) if v.ndim == 2 and v.shape[1] >= 2 else v.reshape(-1).astype(np.complex64)
+    if v.ndim == 2 and v.shape[1] >= 2:
+        x = v[:, 0] + 1j * v[:, 1]
+    else:                                                          # WAV-lifting v0: real audio -> analytic signal
+        from scipy.signal import hilbert
+        x = hilbert(v.reshape(-1).astype(np.float64))
     return x.astype(np.complex64), float(fs)
