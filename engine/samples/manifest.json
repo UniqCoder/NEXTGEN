@@ -26,6 +26,19 @@
   "source": "SANJAYA-Gen (seeded)"
  },
  {
+  "id": "syn-qpsk-k7-short-7db",
+  "name": "Same recipe, a 0.66 s capture at 7 dB",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k7-short-7db.sigmf-data",
+  "what": "Too short to decide the code: the Data-Sufficiency Engine says how many seconds to record.",
+  "truth": {
+   "esn0_db": 7.0,
+   "cfo_hz": -362.439437929451,
+   "clock_ppm": 0.0
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
   "id": "syn-qpsk-k5-24x64-prbs9",
   "name": "QPSK · CC K=5 · block 24×64 · PRBS-9 · clock −12 ppm",
   "kind": "synthetic",
