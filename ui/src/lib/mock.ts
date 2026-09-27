@@ -69,7 +69,11 @@ export const SCENARIO = {
     lo: -110, range: 60, floor: -104, span: 44, rowStart: 24, gridSeconds: 50, psdMin: -106, psdMax: -64, obwDb: -67,
     verdict: null as 'pass' | 'fail' | 'undecided' | null, source: 'demo',
     reason: null as string | null,
-    measured: null as { band_lo_hz: number; band_hi_hz: number; centre_hz: number; snr_db: number; floor_db: number; rate_hz: number | null; tones_hz: number[] } | null,
+    measured: null as {
+      band_lo_hz: number; band_hi_hz: number; centre_hz: number; snr_db: number; floor_db: number; rate_hz: number
+      carrier_hz: number; family: 'PSK' | 'FSK'; modulation: string; order: number | null; tones_hz: number[]; spacing_hz: number | null
+      standards: { name: string; ppm: number | null }[]
+    } | null,
     layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
   },
   text: {

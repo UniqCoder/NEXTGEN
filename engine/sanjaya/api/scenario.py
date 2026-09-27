@@ -10,7 +10,6 @@ from ..coding import block_deinterleave, syndrome_rate_half
 from ..coding.blind import dual_spectrum, divisors
 from ..proof import resynthesise
 from ..bits import from_bits
-from ..measure import occupied_band, band_measure
 
 ROWS, BINS = 360, 1024
 SUP = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
@@ -104,9 +103,11 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
                   f"Cyclostationary |x|² line, then a block-wise Oerder–Meyr timing fit over the whole file. "
                   f"Nominal in the recipe: {mo.symbol_rate_hz:.3f} Bd.", unit="Bd"),
         "modulation": P("modulation", "Modulation", mo.scheme.upper(), "blind", 2,
-                        "QPSK is the only modulation in the v1 hypothesis set; the layered proof passed its PHY layer "
-                        f"({phy.verdict.upper()}). Ranking against BPSK / 8PSK / 16QAM / OQPSK arrives with the E1 + E3 experts.",
-                        cands=[{"v": "QPSK", "p": 1.0}], set_="{QPSK}"),
+                        ("Decode-fit (physics expert, no training): block-wise M-th order coherence of the symbols at the "
+                         "measured rate ranks " + ", ".join(f"{c['v']} {c['p']:.2f}" for c in step["classify"].evidence["candidates"])
+                         + "; " if "classify" in step else "")
+                        + f"the layered proof then passed its PHY layer ({phy.verdict.upper()}).",
+                        cands=step["classify"].evidence["candidates"] if "classify" in step else [{"v": "QPSK", "p": 1.0}], set_="{QPSK}"),
         "fec": P("fec", "FEC", code_str, "blind", 4,
                  f"{ev('code', code_str)}. Parity checks unsatisfied: {coding.stats.get('K1_unsat_frac', 0):.4f} "
                  f"(random bits: 0.5). Corrections {int(coding.stats.get('K2_corrections', 0))}."),
@@ -274,33 +275,72 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
     }
 
 
-def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str) -> dict:
-    """No recipe survived the search: still show the real spectrogram and whatever spectral measurements
-    stand on their own (occupied band, candidate symbol/tone rate), instead of returning nothing.
-    An honest 'undecided, because...', not a guess (PROTOTYPE_PLAN §5)."""
+def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str, phy: dict | None = None) -> dict:
+    """No recipe survived the search: still show the real spectrogram and everything the physics expert
+    identified on its own (family, order, rate, carrier, consistent standards, measured symbols), and why
+    decoding stopped. An honest 'undecided, because...', never a guess (PROTOTYPE_PLAN §5)."""
     S_full = spectrogram_db(x)
     dur = x.size / fs
-    params, measured = {}, None
-    band = occupied_band(x, fs)
-    if band:
-        lo, hi, centre, snr, floor = band
-        bm = band_measure(x, fs, lo, hi)
-        measured = {"band_lo_hz": lo, "band_hi_hz": hi, "centre_hz": centre, "snr_db": round(snr, 1),
-                    "floor_db": round(floor, 1), "rate_hz": bm.get("rate_hz"), "tones_hz": bm.get("tones_hz", [])}
-        params["bw"] = P("bw", "Occupied bandwidth", f"{(hi - lo) / 1e3:.2f}", "blind", 0,
-                         f"−20 dB bandwidth around the strongest emission (centre {centre:,.0f} Hz).".replace(",", " "), unit="kHz")
-        params["snr"] = P("snr", "In-band SNR", f"{snr:.1f}", "blind", 0,
+    avg = 10 * np.log10((10 ** (S_full / 10)).mean(0))
+    live = avg[avg > avg.max() - 100]                                  # skip receiver audio's empty mirror half
+    obw_db = float(avg.max() - 3)
+    if phy:
+        b = [int(np.clip(round((f + fs / 2) / fs * BINS - 0.5), 0, BINS - 1)) for f in (phy["band_lo_hz"], phy["band_hi_hz"])]
+        obw_db = float(avg[b[0]: b[1] + 1].max() - 3)
+    sp = lambda v, d=0: f"{v:,.{d}f}".replace(",", " ")
+    params = {"fs": P("fs", "Sampling frequency", sp(fs), "blind", 0, "From the file header.", unit="Hz")}
+    measured, cons, emitters = None, [], []
+    if phy:
+        stds = phy["standards"]
+        measured = {k: phy.get(k) for k in ("band_lo_hz", "band_hi_hz", "centre_hz", "rate_hz", "carrier_hz", "family",
+                                            "modulation", "order", "tones_hz", "spacing_hz")}
+        measured.update(snr_db=round(phy["snr_db"], 1), floor_db=round(phy["floor_db"], 1), standards=stds)
+        measured["tones_hz"] = measured["tones_hz"] or []
+        if phy["family"] == "PSK":
+            coh = phy["coherence"]
+            tied = [c["v"] for c in phy["candidates"] if c["p"] >= 0.85 * phy["candidates"][0]["p"]]
+            params["modulation"] = P("modulation", "Modulation", phy["modulation"], "blind", 0,
+                "Decode-fit: symbols sampled at the measured rate, block-wise M-th order coherence for each PSK order "
+                f"(BPSK {coh['BPSK']:.2f}, QPSK {coh['QPSK']:.2f}, 8PSK {coh['8PSK']:.2f}; random data scores ~0.18). "
+                + ("The smallest order that explains the symbols wins." if phy["order"] else
+                   "No order stands out: the constellation is smeared (typical of HF multipath without an equalizer), "
+                   "so the answer is a set, not a guess."),
+                conf=round(max(coh.values()), 2) if phy["order"] else None, cands=phy["candidates"],
+                set_="{" + ", ".join(tied if not phy["order"] else [phy["modulation"]]) + "}")
+            params["baud"] = P("baud", "Symbol rate", sp(phy["rate_hz"], 2), "blind", 0,
+                f"Band-edge cyclic line: |x|² of only the two excess-bandwidth edges (fc ± Rs/2), {phy['rate_strength']:.0f}× "
+                f"its neighbourhood vs {phy['rate_runner_up']:.0f}× for the best other rate. Lines made by structure inside "
+                "the band (idle patterns, probes) do not survive this test.", unit="Bd")
+        else:
+            params["modulation"] = P("modulation", "Modulation", phy["modulation"], "blind", 0,
+                f"{len(phy['tones_hz'])} evenly spaced tones ({sp(phy['spacing_hz'])} Hz apart) carry "
+                f"{100 * phy['tone_energy']:.0f} % of the in-band energy.", conf=round(phy["tone_energy"], 2))
+            params["baud"] = P("baud", "Keying rate", sp(phy["rate_hz"], 2), "blind", 0,
+                "Line in the spectrum of instantaneous-frequency transitions.", unit="Bd")
+            params["tones"] = P("tones", "Tones", ", ".join(sp(t) for t in phy["tones_hz"]), "blind", 0,
+                "Local maxima of the in-band spectrum, each at least 12× the band's median level.", unit="Hz")
+        params["cfo"] = P("cfo", "Carrier", sp(phy["carrier_hz"], 1), "blind", 0,
+            "M-th power line after decode-fit" if phy.get("order") else "Centre of the occupied band (tones or order not resolved)", unit="Hz")
+        params["bw"] = P("bw", "Occupied bandwidth", f"{(phy['band_hi_hz'] - phy['band_lo_hz']) / 1e3:.2f}", "blind", 0,
+                         "−20 dB bandwidth around the strongest emission (6 dB over the floor at low SNR).", unit="kHz")
+        params["snr"] = P("snr", "In-band SNR", f"{phy['snr_db']:.1f}", "blind", 0,
                           "Occupied-band power over the median level measured outside it.", unit="dB")
-        if bm.get("rate_hz"):
-            params["baud"] = P("baud", "Candidate rate", f"{bm['rate_hz']:.2f}", "blind", 0,
-                               "Strongest |x|² cyclic line inside the band — a candidate symbol clock, not yet "
-                               "the certified one (no recipe passed the proof).", unit="Bd")
-        if bm.get("tones_hz"):
-            params["tones"] = P("tones", "Candidate tones", ", ".join(f"{t:,.0f}".replace(",", " ") for t in bm["tones_hz"]), "blind", 0,
-                                "Discrete spectral peaks inside the band — consistent with FSK if several recur evenly spaced.", unit="Hz")
-    emitters = [{"id": "E1", "f0": measured["band_lo_hz"], "f1": measured["band_hi_hz"], "t0": 0.0, "t1": 1.0,
-                 "snr": measured["snr_db"], "cls": "Undecided", "std": "No named standard", "state": "undecided",
-                 "label": "E1 · undecided", "sub": f"{measured['snr_db']:.0f} dB SNR · not yet decoded", "fc": measured["centre_hz"]}] if measured else []
+        ppm = [f"{s['name']} ({s['ppm']:+.0f} ppm)" if s["ppm"] is not None else s["name"] for s in stds]
+        params["std"] = P("std", "Standard", " / ".join(s["name"] for s in stds) or "No named standard", "library", 0,
+            ("Consistent at the PHY: " + ", ".join(ppm) + ". " +
+             ("These are not separable from the PHY alone; the frame structure would separate them. " if len(stds) > 1 else "") +
+             ("ppm = measured symbol rate against the standard's nominal rate: the recording chain's clock offset."
+              if any(s["ppm"] is not None for s in stds) else ""))
+            if stds else "No tabled standard matches this family, order and rate.")
+        if phy.get("symbols") is not None:
+            z = phy["symbols"]
+            pick = np.random.default_rng(0).choice(z.size, min(4000, z.size), replace=False)
+            cons = np.round(np.stack([z[pick].real, z[pick].imag], 1).ravel().astype(float), 4).tolist()
+        cls = f"{phy['modulation']} · {phy['rate_hz']:.0f} Bd"
+        emitters = [{"id": "E1", "f0": phy["band_lo_hz"], "f1": phy["band_hi_hz"], "t0": 0.0, "t1": 1.0,
+                     "snr": round(phy["snr_db"], 1), "cls": cls, "std": stds[0]["name"] if stds else "No named standard",
+                     "state": "undecided", "label": f"E1 · {cls}", "sub": f"{phy['snr_db']:.0f} dB SNR · identified, not decoded",
+                     "fc": phy["carrier_hz"]}]
     return {
         "scenario": {
             "file": {k: meta[k] for k in ("name", "path", "size", "sha256", "format", "route")} | {"duration": dur},
@@ -310,13 +350,26 @@ def build_partial(x: np.ndarray, fs: float, meta: dict, reason: str) -> dict:
             "proof": {},
             "cert": {},
             "view": {"lo": float(np.percentile(S_full, 5)) - 9, "range": float(np.ceil(np.percentile(S_full, 99.9) - np.percentile(S_full, 5))) + 16,
+                     # waterfall colour range from this recording (same rule as a decoded job), not the demo's
+                     # (bins > 100 dB under the peak are receiver audio's empty mirror half, not a noise floor)
+                     "floor": round(_floor(S_full) - 3),
+                     "span": int(np.ceil(np.percentile(S_full, 99.9) - _floor(S_full) + 5)),
+                     "rowStart": 0, "psdMin": float(np.floor(np.percentile(live, 2) - 2)), "psdMax": float(np.ceil(avg.max() + 3)),
+                     "obwDb": obw_db,
                      "gridSeconds": _grid_step(dur), "verdict": "undecided", "reason": reason, "measured": measured, "source": "search",
                      "layers": [], "equivalences": []},
-            "text": {"heroCap": f"{fs / 1e3:g} kHz · {dur:.1f} s", "format": f"{meta['format']} · {fs / 1e3:g} kHz"},
+            "text": {"heroCap": f"{fs / 1e3:g} kHz · {dur:.1f} s", "format": f"{meta['format']} · {fs / 1e3:g} kHz",
+                     "evm": "measured symbols · not decoded" if cons else "",
+                     "obw": f"OBW {(phy['band_hi_hz'] - phy['band_lo_hz']) / 1e3:.2f} kHz" if phy else ""},
+            "constellation": cons,
         },
         "spec": {"bins": BINS, "rows": ROWS, "fs": fs},
         "spectrogram": {"full": S_full},
     }
+
+
+def _floor(S: np.ndarray) -> float:
+    return float(np.percentile(S[S > S.max() - 100], 5))
 
 
 def _grid_step(dur: float) -> float:

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from .recipe import Recipe, Modulation, ConvCode, Interleaver, Scrambler, Crc, Field, Framing
 from .measure import symbol_rate_blind, cfo_power, rolloff_psd
+from .classify import identify
 from .pipeline import symbols, frontend, unwrap
 from .coding.blind import identify_code, solve_scrambler, edge_violations, CodeHypothesis
 from .bits.lens import find_counter, find_crc, constant_runs
@@ -15,7 +16,7 @@ MIN_SYNC = 8                  # minimum sync-marker length in symbols
 
 
 class SearchError(RuntimeError):
-    pass
+    phy: dict | None = None            # the classify result, so an undecided job still reports what was identified
 
 
 @dataclass
@@ -70,6 +71,28 @@ def blind_search(x: np.ndarray, fs: float, on_step=None) -> tuple[Recipe, list[S
                 for s in it:
                     self.append(s)
         log = _Log()
+    phy = identify(x, fs)
+    try:
+        return _search(x, fs, log, phy)
+    except SearchError as e:
+        if phy is not None and phy["family"] == "PSK" and not phy["order"]:
+            e.args = (f"PSK order not separable (symbols smeared, e.g. HF multipath with no equalizer); "
+                      f"under the QPSK hypothesis: {e.args[0]}",)
+        e.phy = phy
+        raise
+
+
+def _search(x, fs, log, phy):
+    # 0 CLASSIFY (physics expert) ----------------------------------------------------------------------------
+    if phy is None:
+        raise SearchError("no emission stands out from the noise floor")
+    std = ", ".join(s["name"] for s in phy["standards"])
+    log.append(Step("classify", f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd" + (f", consistent with {std}" if std else ""),
+                    "blind", {"family": phy["family"], "coherence": phy.get("coherence"), "candidates": phy.get("candidates"),
+                              "standards": phy["standards"]}))
+    if phy["family"] == "FSK" or phy["order"] not in (None, 4):
+        raise SearchError(f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified; the v1 blind coding layer covers "
+                          f"QPSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
     rs0 = symbol_rate_blind(x, fs)
     cfo0 = cfo_power(x, fs, 4)

@@ -96,7 +96,9 @@ def occupied_band(x: np.ndarray, fs: float, nper: int = 2048, drop_db: float = 2
     f = np.fft.fftshift(np.fft.fftfreq(nper, 1 / fs))
     sm = np.convolve(psd, np.ones(9) / 9, "same")
     k = int(sm.argmax())
-    thresh = sm[k] * 10 ** (-drop_db / 10)
+    # below ~20 dB in-band SNR the drop_db level sits under the noise floor; stop 6 dB above the floor instead
+    # (on receiver audio the median bin is the empty mirror half, so this term never binds there)
+    thresh = max(sm[k] * 10 ** (-drop_db / 10), float(np.median(sm)) * 10 ** 0.6)
     lo = k
     while lo > 0 and sm[lo - 1] > thresh:
         lo -= 1
