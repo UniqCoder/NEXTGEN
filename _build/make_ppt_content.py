@@ -253,8 +253,17 @@ B([
     "<b>Honest on the recordings it can\u2019t yet decode:</b> when the blind search comes back undecided, the UI still "
     "shows the real spectrogram and every measured parameter, plus the reason \u2014 never a guess dressed up as an "
     "answer.",
-    "<b>42 pytest tests</b> (layering rules, wrong-recipe, tampered-certificate, wrong-file, real-file measurement "
-    "regression cases) \u2014 plus a nightly kill-matrix plan so <b>every fragile dependency has a proven fallback</b>.",
+    "<b>The four USPs are no longer aspirational \u2014 all four run today, on real recordings:</b> a physics-only "
+    "classifier identifies rate/order/standard on all 6 real off-air files with no training data (STANAG 2399.92 Bd "
+    "at \u221232 ppm, PSK31 31.25 Bd exact); the Data-Sufficiency Engine predicts \u201crecord 0.90 s (P50) / 1.06 s "
+    "(P90)\u201d for a too-short capture, and a capture cut to that exact length then decodes; Evidence Stitching pools "
+    "three sensor captures (different ADC rates, clocks 0/\u221225/+40 ppm, one inverted) each too short alone into a "
+    "decode with every CRC valid, catches a decoy from a different emitter, and reports each sensor's clock/tuning/"
+    "gain; the Recipe Compiler turns a certified recipe into a dependency-free receiver.py, gated so it is only "
+    "released once it reproduces SANJAYA's bits exactly \u2014 verified bit-exact and portable to a different sensor.",
+    "<b>64 pytest tests</b> (layering rules, wrong-recipe, tampered-certificate, wrong-file, real-file measurement, "
+    "sufficiency-prediction, stitching, compiler bit-exactness regression cases) \u2014 plus a nightly kill-matrix plan "
+    "so <b>every fragile dependency has a proven fallback</b>.",
 ])
 callout("<b>Why this slide wins rooms:</b> most teams pitch what they will build. We show a blind decode + signed "
         "proof + independent verify working <b>today</b>, with honest limits stated (schema 0.1: QPSK-only engine, "
@@ -265,12 +274,12 @@ story.append(PageBreak())
 slide_header("SLIDE 5", "WHAT", "Five differentiators no competitor even claims \u2014 and why the gap lasts",
              "43 public competitor repositories analysed (README claims, snapshot 26 Sep 2026)")
 table([
-    ["#", "Where the field stops", "SANJAYA"],
-    ["1", "One file at a time", "C3 Evidence Stitching \u2014 pools captures from different sensors &amp; locations"],
-    ["2", "One sensor at a time", "C4 Sensor Twin \u2014 models each receiver's clock and noise; network clock solution"],
-    ["3", "No answer to \u201cis this enough data?\u201d", "C2 Data-Sufficiency \u2014 tells the collector what to record, where, how long"],
-    ["4", "Output ends in a report", "C5 Recipe Compiler \u2014 emits a bit-exact, ready-to-run receiver (.grc)"],
-    ["5", "Bit-level verification at best", "C1 Layered Proof + signed Decode Certificate, re-checkable by anyone"],
+    ["#", "Where the field stops", "SANJAYA \u2014 working today, not planned"],
+    ["1", "One file at a time", "Evidence Stitching \u2014 3 sensor captures, each too short alone, pooled to a full decode; every CRC valid"],
+    ["2", "One sensor at a time", "Sensor Twin \u2014 clock \u221225.6/+37.4 ppm measured against the other sensors, tuning, gain, spectral inversion"],
+    ["3", "No answer to \u201cis this enough data?\u201d", "Data-Sufficiency Engine \u2014 predicts \u201crecord 0.90 s (P50) / 1.06 s (P90)\u201d; a capture that long decodes"],
+    ["4", "Output ends in a report", "Recipe Compiler \u2014 receiver.py, gated bit-exact (40/40 frames), portable to another sensor"],
+    ["5", "Bit-level verification at best", "Layered Proof + signed Decode Certificate; verify-in-UI: drop a certificate + file, get REPRODUCED"],
 ], [8 * mm, 62 * mm, W - 70 * mm])
 B([
     "<b>33 of 43 competitor READMEs</b> test truth only against their own generator; SANJAYA validates on real public "
