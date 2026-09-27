@@ -41,8 +41,8 @@ Every other stage proposes; the proof decides. A wrong guess costs time, never c
   - Coding: the decoded stream satisfies the code's parity checks; the corrections match the channel error rate.
   - Structure: the sync marker recurs, the CRC passes far beyond chance, the counters increment.
 - A **near-miss battery** proves that neighbouring recipes are rejected. The neighbours the data cannot separate are listed on the certificate as honest equivalences, not hidden.
-- The certificate is Ed25519-signed. `sanjaya verify` re-derives every statistic from the file alone in seconds, without the search.
-- **Status: working** (synthetic QPSK chain, shown in the UI).
+- The certificate is Ed25519-signed. `sanjaya verify` re-derives every statistic from the file alone in seconds, without the search — and now also from the UI (Tools > Verify): drop a certificate and its recording, get REPRODUCED or the exact problem (signature invalid, which statistic differs, wrong file).
+- **Status: working**, including the classifier (below) and modulation-order ranking shown as evidence on the certified `modulation` parameter, not just QPSK-by-default.
 
 ### USP 2 · A truly blind coding layer (answers the PS's core ask, (i) to (v))
 - **Wall:** everyone else tries a fixed list (K=7 Viterbi, RS(255,223), one LDPC) and gives up outside it.
@@ -52,23 +52,24 @@ Every other stage proposes; the proof decides. A wrong guess costs time, never c
   - the CRC polynomial by polynomial GCD over GF(2), and its init by modular inverse;
   - counters, length and constant fields.
 - It also resolves the traps other tools do not model: the 8 phase / conjugation ambiguities, codes whose I/Q-swapped twin is also a valid code, codes blind to inversion, and sync markers sitting next to constant coded symbols.
-- **Status: working** for the QPSK / block-interleaver / convolutional / additive-scrambler / CRC family. RS, LDPC, convolutional / diagonal / PN interleavers are next (Phase C).
+- A physics-only classifier (`classify.py`, no training) runs before the coding search and identifies family, order and rate on **any** recording, including the 6 real off-air ones: symbol rate from the **band-edge** |x|² line (immune to in-band structure like an idle pattern, which is what made the rate wrong on real STANAG before this), PSK order by decode-fit coherence, FSK by tone regularity + keying rate. It reports "order not separable" rather than guessing when the channel (HF multipath) or the capture length won't support an answer.
+- **Status: working** for the QPSK / block-interleaver / convolutional / additive-scrambler / CRC family; the classifier works on every family. Real recordings: STANAG 4285, MIL-188-110A, HFDL, PSK31, SITOR-B and 2G ALE all *identify* correctly (rate, order or tone plan, and consistent named standard with clock ppm); none of the FSK/BPSK/8PSK ones *decode* yet — that needs each real standard's own coding (RS, LDPC, convolutional/diagonal/PN interleavers), deliberately deferred (not a priority per the differentiation-first pivot; see HANDOFF 28 Sep evening).
 
 ### USP 3 · "Is this enough data?" and pooling across sensors (answers P1, P2)
 - **Wall:** a short capture either fails silently or produces a guess.
 - **SANJAYA:**
-  - **Data-Sufficiency Engine:** every open decision keeps an evidence ledger. When a capture is too short, SANJAYA says so and predicts how many more seconds are needed (P50 / P90), plus the minimum sample rate, bandwidth and SNR.
-  - **Evidence Stitching + Sensor Twin:** measures each sensor's clock error (already working: ±0.1 ppm) and noise floor, normalises them, aligns captures of the same emitter from different sensors and locations, and pools their evidence. The proof then runs on each capture to catch mis-associations.
-- **Status:** sensor clock measurement working; sufficiency and stitching are Phase D.
+  - **Data-Sufficiency Engine:** every search stage keeps an evidence ledger (decided / not, why, what would settle it). When a capture is too short, SANJAYA predicts how many more seconds are needed, P50 and P90 — modelled on how the coding-layer statistic grows (∝ √frames), verified against Gen truncations, and confirmed by actually decoding a capture cut to exactly the P90 length. "No code exists, more data won't help" is only said after a power analysis shows the search *could* have seen even a weak code at that length — otherwise it reports the prediction instead of a false negative.
+  - **Evidence Stitching + Sensor Twin:** each sensor's capture is measured by its own front-end (its own clock error, tuning offset, gain, noise floor, spectral inversion), aligned on the clearest capture's sync marker, and pooled into one symbol stream — frame slots step negative across capture boundaries so no inter-capture gap is assumed. The recipe found from the pool is then **proven on each capture alone**, which is exactly what catches a capture that turns out to be a different emitter (dropped, pool re-searched).
+- **Status: working.** Demo: three ~0.6–0.7 s captures at 6.5–7.5 dB (different ADC rates, ±0–40 ppm clocks, one with an inverted spectrum) — none decodes alone, pooled they decode with every CRC valid, sensor clocks come back correct to within a couple of ppm, and a decoy capture from another emitter is caught and excluded. Sufficiency demo: a 0.66 s / 7 dB capture predicts "record 0.90 s (P50) / 1.06 s (P90)"; a capture that long then decodes.
 
 ### USP 4 · Recipe Compiler: output a receiver, not a report (answers P4)
 - **Wall:** analysis ends in a PDF; configuring the designated sensor is still manual.
 - **SANJAYA:** compiles a **certified** recipe into:
-  - a runnable GNU Radio flowgraph (stock blocks for the PHY, embedded Python blocks for de-interleaving, FEC and framing);
-  - a versioned recipe JSON (SigMF-compatible);
-  - a matched detector for the sync marker.
-- **Release gate:** the flowgraph run on the source recording must reproduce SANJAYA's bits exactly.
-- **Status:** Phase D.
+  - a standalone `receiver.py` (NumPy only, no SANJAYA dependency, the recipe embedded) that measures the recording itself, so it decodes a *different* sensor's capture of the same emitter too — different sample rate, clock error, tuning, inverted spectrum and all;
+  - a versioned recipe as a SigMF annotation (`recipe.sigmf-meta`);
+  - a GNU Radio 3.9+ flowgraph (`.grc`) running the same receiver as an embedded block.
+- **Release gate:** the compiled receiver runs as its own process on the source recording and must reproduce SANJAYA's information bits exactly, frame for frame — nothing is packaged if it does not.
+- **Status: working.** Verified bit-exact on synthetic files (40/40 frames, 30 480 bits) and portable to a sensor with a different ADC rate, clock offset and an inverted spectrum. Every decoded job compiles and gates automatically; the certificate page has a "Compiled receiver" section and a Receiver (.zip) download, checked end to end in the browser. The `.grc` is generated but not executed here (GNU Radio stays optional per the dependency policy).
 
 ## 4. Other innovations, shipped as features
 
@@ -148,12 +149,14 @@ Weeks from W1 = Mon 28 Sep 2026. Each phase ends with a demo-able build and gree
 | QPSK · CC K=5 · block 24×64 · PRBS-9 (−12 ppm clock) | Synthetic | Different code and geometry, clock error measured |
 | QPSK · CC K=7 · no interleaver · blind degree-6 scrambler | Synthetic | Scrambler not in any library, solved blind |
 | QPSK · CC K=9 · no scrambler · 6.37 samples/symbol | Synthetic | Non-integer oversampling, long code |
+| Same recipe, a 0.66 s capture at 7 dB | Synthetic | Data-Sufficiency Engine predicts the recording length needed |
+| One emitter, three sensors (+1 decoy) | Synthetic | Evidence Stitching: each too short alone, pooled they decode, decoy caught |
 | Pure noise | Synthetic | Honest "undecided", never a fabricated recipe |
-| STANAG 4285 idle (8PSK, 2400 Bd, HF) | Real | Real HF PSK: measured rate and band |
-| MIL-STD-188-110A 2400 bps serial | Real | Real HF PSK |
-| HFDL 1200 bps (bursty PSK) | Real | Real bursts |
-| PSK31 (BPSK, 31.25 Bd) | Real | Very narrow real signal |
-| SITOR-B / NAVTEX (FSK, 100 Bd) | Real | Real FSK |
-| 2G ALE (8-FSK, 125 Bd) | Real | Real multi-tone FSK |
+| STANAG 4285 idle (8PSK, 2400 Bd, HF) | Real | Identified: rate, order-not-separable (HF multipath), consistent standard |
+| MIL-STD-188-110A 2400 bps serial | Real | Identified: real HF PSK |
+| HFDL 1200 bps (bursty PSK) | Real | Identified: QPSK, real bursts |
+| PSK31 (BPSK, 31.25 Bd) | Real | Identified exactly: BPSK, 31.25 Bd |
+| SITOR-B / NAVTEX (FSK, 100 Bd) | Real | Identified exactly: 2-FSK, 100.2 Bd |
+| 2G ALE (8-FSK, 125 Bd) | Real | Identified exactly: 8-FSK, 125.0 Bd, matches the MIL-STD-188-141 tone plan |
 
-Real recordings come from the Signal Identification Wiki (sigidwiki.com), with the source URL kept beside each file. Their decoding lights up phase by phase; until then they are honestly undecided with measurements.
+Real recordings come from the Signal Identification Wiki (sigidwiki.com), with the source URL kept beside each file. All six are identified (family, rate/order or tone plan, consistent named standard) by the physics-only classifier; none decode yet — each real standard's own coding (not the Gen family's conv+block+CRC) is out of scope for now (see HANDOFF, 28 Sep pivot).
