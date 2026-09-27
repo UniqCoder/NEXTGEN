@@ -5,15 +5,13 @@ import numpy as np
 from .recipe import Recipe
 from .kernels import conv_encode
 from .coding import block_interleave, lfsr_sequence
-from .demod import map_qpsk, rrc_taps, filt0
+from .demod import map_qpsk
+from .dsp import synth_at
 
 
-def sps_of(recipe: Recipe) -> int:
-    sps = recipe.sample_rate_hz / recipe.modulation.symbol_rate_hz
-    if abs(sps - round(sps)) > 1e-9:
-        # ponytail: integer samples/symbol only; the polyphase resampler arrives with WP03 receivers
-        raise NotImplementedError(f"non-integer samples/symbol ({sps:.4f}) not supported in schema 0.1")
-    return int(round(sps))
+def sps_of(recipe: Recipe) -> float:
+    """Nominal samples per symbol (any real value; the receiver measures the actual one)."""
+    return recipe.sample_rate_hz / recipe.modulation.symbol_rate_hz
 
 
 @lru_cache(maxsize=16)
@@ -59,10 +57,6 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
     return {"coded": coded, "interleaved": inter, "scrambled": scr, "symbols": np.concatenate([asm, body], 1)}
 
 
-def shape(symbols: np.ndarray, sps: int, rolloff: float, n_samples: int, first_center: int) -> np.ndarray:
-    """Pulse-shape a symbol stream; symbol m is centred on sample first_center + m*sps."""
-    s = np.zeros(n_samples, np.complex64)
-    idx = first_center + sps * np.arange(symbols.size)
-    ok = (idx >= 0) & (idx < n_samples)
-    s[idx[ok]] = symbols[ok]
-    return filt0(s, rrc_taps(sps, rolloff))
+def shape(symbols: np.ndarray, sps: float, rolloff: float, n_samples: int, first: float) -> np.ndarray:
+    """Pulse-shape a symbol stream; symbol m is centred on (fractional) sample first + m*sps."""
+    return synth_at(symbols, first + sps * np.arange(symbols.size), sps, rolloff, n_samples)
