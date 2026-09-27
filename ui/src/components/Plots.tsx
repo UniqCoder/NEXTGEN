@@ -133,6 +133,7 @@ export function PSD() {
 
 const QPSK = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([i, q]) => [i / Math.SQRT2, q / Math.SQRT2])
 const PSK8 = Array.from({ length: 8 }, (_, i) => [Math.cos((i * Math.PI) / 4 + Math.PI / 8), Math.sin((i * Math.PI) / 4 + Math.PI / 8)])
+const BPSK = [[1, 0], [-1, 0]]
 
 /** Soft round dot, pre-rendered once per colour, stamped with additive blending. */
 function sprite(color: string, size = 14) {
@@ -174,8 +175,9 @@ export function Constellation({ locked, ref8 }: { locked: boolean; ref8: boolean
     const rnd = prng(Math.floor(t * 60))
     const n = 260
     const meas = constellation()                                   // engine: measured symbols; demo: synthetic
+    const none = meas !== null && meas.length === 0                // a job with no symbols to show (FSK, smeared PSK)
     a.globalAlpha = paper ? 0.25 : 0.34
-    for (let j = 0; j < n; j++) {
+    for (let j = 0; j < (none ? 0 : n); j++) {
       const k = meas ? Math.floor(rnd() * (meas.length / 2)) : 0
       const [i0, q0] = meas ? [meas[2 * k], meas[2 * k + 1]] : QPSK[Math.floor(rnd() * 4)]
       const idx = t * 900 + j * 3.4
@@ -204,8 +206,10 @@ export function Constellation({ locked, ref8 }: { locked: boolean; ref8: boolean
     ctx.drawImage(A, 0, 0, w, h)
 
     // reference points of the current hypothesis
+    const m = SCENARIO.view.measured
+    const refs = SCENARIO.view.verdict === 'undecided' ? (m?.order === 2 ? BPSK : m?.order === 4 ? QPSK : m?.order === 8 ? PSK8 : []) : ref8 ? PSK8 : QPSK
     ctx.strokeStyle = ref8 ? css('--fault') : css('--bone-1'); ctx.lineWidth = 1
-    for (const [i, q] of ref8 ? PSK8 : QPSK) {
+    for (const [i, q] of refs) {
       const [x, y] = P(i * 1, q * 1)
       ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x - 2, y); ctx.moveTo(x + 2, y); ctx.lineTo(x + 6, y)
       ctx.moveTo(x, y - 6); ctx.lineTo(x, y - 2); ctx.moveTo(x, y + 2); ctx.lineTo(x, y + 6); ctx.stroke()
@@ -213,9 +217,17 @@ export function Constellation({ locked, ref8 }: { locked: boolean; ref8: boolean
   }, [locked, ref8])
   return (
     <Frame r={r}>
-      <div className="ax-title" style={{ left: 12, bottom: 8 }}>{locked ? `${SCENARIO.text.evm} · CARRIER LOCKED` : 'ACQUIRING · CARRIER SPINNING'}</div>
+      <div className="ax-title" style={{ left: 12, bottom: 8 }}>{constellationCaption(locked)}</div>
     </Frame>
   )
+}
+
+function constellationCaption(locked: boolean) {
+  const m = SCENARIO.view.measured
+  if (SCENARIO.view.verdict === 'undecided')
+    return !m ? 'NO EMISSION' : m.family === 'FSK' ? 'FSK · NO CONSTELLATION · SEE THE TONES' : m.order
+      ? `MEASURED ${m.modulation} SYMBOLS · NOT DECODED` : 'PSK ORDER NOT SEPARABLE · SYMBOLS SMEARED'
+  return locked ? `${SCENARIO.text.evm} · CARRIER LOCKED` : 'ACQUIRING · CARRIER SPINNING'
 }
 
 const sprites = new Map<string, HTMLCanvasElement>()

@@ -32,7 +32,7 @@ export function Signal() {
       n={2}
       title="Signal"
       lede={undecided ? (
-        m ? <>An emission at <b>{Math.round(m.centre_hz).toLocaleString()} Hz</b>, {(m.band_hi_hz - m.band_lo_hz).toFixed(0)} Hz wide, {m.snr_db.toFixed(0)} dB SNR{m.rate_hz ? <> — candidate rate <b>{m.rate_hz.toFixed(2)} Bd</b></> : null}{m.tones_hz.length ? <>, tones at {m.tones_hz.map((t) => Math.round(t)).join(', ')} Hz</> : null}. No recipe passed the proof yet — see why on <a href="#/decoding">Decoding</a>.</>
+        m ? <><b>{m.modulation}</b> at <b>{m.rate_hz.toFixed(2)} Bd</b>{m.family === 'FSK' ? <>, {m.tones_hz.length} tones {Math.round(m.spacing_hz ?? 0)} Hz apart</> : null}, carrier {Math.round(m.carrier_hz)} Hz, {m.snr_db.toFixed(0)} dB SNR{m.standards.length ? <> — consistent with <b>{m.standards.map((x) => x.name).join(' / ')}</b></> : null}. Identified from the recording alone; not decoded — see why on <a href="#/decoding">Decoding</a>.</>
           : 'No emission stood out from the noise floor.'
       ) : measured ? (
         <>One strong signal at <b>{T.at}</b>: <b>{override ?? T.mod}</b> at <b>{T.baudSpaced}</b> symbols per second, SNR {T.snr} dB.{T.others ? <> {T.others}, <a href="#/scene">see them in Scene</a>.</> : null}</>
@@ -62,13 +62,13 @@ export function Signal() {
           tools={<Seg value={view} onChange={setView} label="Demodulation view"
             options={[{ v: 'const', label: 'Constellation' }, { v: 'eye', label: 'Eye' }, { v: 'fsk', label: 'FSK · E4' }]} />}
         >
-          {view === 'const' ? <Constellation locked={demodDone} ref8={override === '8PSK'} /> : view === 'eye' ? <Eye /> : <InstFreq />}
+          {view === 'const' ? <Constellation locked={demodDone || undecided} ref8={override === '8PSK'} /> : view === 'eye' ? <Eye /> : <InstFreq />}
         </Panel>
 
         <section className="found" style={{ gridArea: 'found' }}>
           <h2>What we found</h2>
           <p className="small dim">Click a value to see the evidence.</p>
-          <Params keys={['content', 'fs', 'baud', 'modulation', 'snr', 'bw', 'cfo', 'fc', 'tones']} />
+          <Params keys={['content', 'fs', 'baud', 'modulation', 'std', 'snr', 'bw', 'cfo', 'fc', 'tones']} />
         </section>
       </div>
     </Step>

@@ -12,15 +12,17 @@ export function Undecided({ reason }: { reason: string | null }) {
   return (
     <div className="empty">
       <span className="label">Undecided</span>
-      <h2>No recipe survived the search.</h2>
+      <h2>{m ? "Identified, but not decoded." : "No emission to decode."}</h2>
       <p className="dim">{reason ?? 'The blind search ran out of hypotheses before one passed the layered proof.'}</p>
       {m && (
         <table className="table" style={{ marginTop: 14, maxWidth: 420 }}>
           <tbody>
-            <tr><td className="label">Occupied band</td><td className="mono">{Math.round(m.band_lo_hz)} – {Math.round(m.band_hi_hz)} Hz</td></tr>
-            <tr><td className="label">In-band SNR</td><td className="mono">{m.snr_db.toFixed(1)} dB</td></tr>
-            {m.rate_hz && <tr><td className="label">Candidate rate</td><td className="mono">{m.rate_hz.toFixed(2)} Bd</td></tr>}
-            {m.tones_hz.length > 0 && <tr><td className="label">Candidate tones</td><td className="mono">{m.tones_hz.map((t) => Math.round(t)).join(', ')} Hz</td></tr>}
+            <tr><td className="label">Identified</td><td className="mono">{m.modulation} · {m.rate_hz.toFixed(2)} Bd</td></tr>
+            <tr><td className="label">Standard</td><td className="mono">{m.standards.length
+              ? m.standards.map((x) => x.name + (x.ppm !== null ? ` (${x.ppm > 0 ? '+' : ''}${Math.round(x.ppm)} ppm)` : '')).join(' / ') : 'none tabled'}</td></tr>
+            <tr><td className="label">Carrier</td><td className="mono">{Math.round(m.carrier_hz)} Hz</td></tr>
+            <tr><td className="label">Occupied band</td><td className="mono">{Math.round(m.band_lo_hz)} – {Math.round(m.band_hi_hz)} Hz · {m.snr_db.toFixed(1)} dB SNR</td></tr>
+            {m.family === 'FSK' && <tr><td className="label">Tones</td><td className="mono">{m.tones_hz.map((t) => Math.round(t)).join(', ')} Hz</td></tr>}
           </tbody>
         </table>
       )}

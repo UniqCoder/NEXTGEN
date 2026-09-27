@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import __version__
 from ..kernels import BACKEND
 
-STAGE_OF = {"measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
+STAGE_OF = {"classify": (0,), "measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
 DEV_ORIGIN = "http://localhost:5173"
 
 
@@ -57,7 +57,7 @@ def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None):
                     "forensics": [{"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": ""},
                                   {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
                                   {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": ""}]}
-            job.result = build_partial(x, fs_, meta, str(e))
+            job.result = build_partial(x, fs_, meta, str(e), e.phy)
             job.state, job.error = "undecided", str(e)
             job.stages = ["failed" if v == "running" else v for v in job.stages]
             return
