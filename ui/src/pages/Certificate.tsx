@@ -125,9 +125,10 @@ export function Certificate() {
             <span>Issued</span><span className="mono">{SCENARIO.cert.issued}</span>
             <span>Signing key</span><span className="mono">{SCENARIO.cert.key}</span>
             <span>Signature</span><span className="mono">{SCENARIO.cert.sig}</span>
-            <span>Verify</span><span className="mono">sanjaya verify {SCENARIO.file.name} {SCENARIO.cert.id}.json</span>
+            <span>Verify</span><span className="mono">sanjaya verify {SCENARIO.file.path || SCENARIO.file.name} {SCENARIO.cert.id}.json</span>
           </div>
         </L>
+        <L className="small dim no-print">Or verify without a terminal: <a href="#/verify">drop this certificate and the recording</a> for an independent, from-scratch re-check.</L>
         {SCENARIO.view.source === 'demo' && <L className="cert-foot mono">Preview: signature fields are placeholders until the engine signs certificates.</L>}
       </article>
     </div>
