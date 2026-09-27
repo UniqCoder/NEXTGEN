@@ -1,0 +1,129 @@
+[
+ {
+  "id": "syn-qpsk-k7-48x32-12db",
+  "name": "QPSK · CC K=7 · block 48×32 · CCSDS scrambler · CRC-16 · 12 dB",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k7-48x32-12db.sigmf-data",
+  "what": "The full chain, decoded blind and proven.",
+  "truth": {
+   "esn0_db": 12.0,
+   "cfo_hz": 43.66662774398566,
+   "clock_ppm": 0.0
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "syn-qpsk-k7-48x32-7db",
+  "name": "Same recipe at 7 dB",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k7-48x32-7db.sigmf-data",
+  "what": "Low SNR: the PHY tests lose power, the coding layer carries the proof.",
+  "truth": {
+   "esn0_db": 7.0,
+   "cfo_hz": -355.77651061687607,
+   "clock_ppm": 0.0
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "syn-qpsk-k5-24x64-prbs9",
+  "name": "QPSK · CC K=5 · block 24×64 · PRBS-9 · clock −12 ppm",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k5-24x64-prbs9.sigmf-data",
+  "what": "A different code and interleaver geometry; the recorder's clock error is measured.",
+  "truth": {
+   "esn0_db": 10.0,
+   "cfo_hz": -366.19147109895084,
+   "clock_ppm": -12
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "syn-qpsk-k7-noil-blindscr",
+  "name": "QPSK · CC K=7 · no interleaver · degree-6 scrambler",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k7-noil-blindscr.sigmf-data",
+  "what": "The scrambler is in no library; its polynomial and seed are solved blind.",
+  "truth": {
+   "esn0_db": 10.0,
+   "cfo_hz": -366.19147109895084,
+   "clock_ppm": 5
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "syn-qpsk-k9-6p37sps",
+  "name": "QPSK · CC K=9 · no scrambler · 6.37 samples/symbol",
+  "kind": "synthetic",
+  "file": "syn-qpsk-k9-6p37sps.sigmf-data",
+  "what": "Non-integer oversampling and a long code.",
+  "truth": {
+   "esn0_db": 12.0,
+   "cfo_hz": -366.19147109895084,
+   "clock_ppm": 0.0
+  },
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "syn-noise-only",
+  "name": "Pure noise",
+  "kind": "synthetic",
+  "file": "syn-noise-only.sigmf-data",
+  "what": "Nothing to find: the answer must be 'undecided', never a fabricated recipe.",
+  "source": "SANJAYA-Gen (seeded)"
+ },
+ {
+  "id": "real-stanag4285-idle",
+  "name": "STANAG 4285 · idle (HF, 8PSK, 2400 Bd)",
+  "kind": "real",
+  "file": "real-stanag4285-idle.wav",
+  "what": "NATO HF serial modem, 1800 Hz carrier in the receiver audio.",
+  "source": "https://www.sigidwiki.com/wiki/STANAG_4285",
+  "duration_s": 10.0
+ },
+ {
+  "id": "real-mil188-110a-2400",
+  "name": "MIL-STD-188-110A · 2400 bps serial (HF, 8PSK)",
+  "kind": "real",
+  "file": "real-mil188-110a-2400.wav",
+  "what": "US military HF serial-tone modem; a 1.4 s burst.",
+  "source": "https://www.sigidwiki.com/wiki/MIL-STD-188-110_Serial",
+  "duration_s": 1.4
+ },
+ {
+  "id": "real-hfdl-1200",
+  "name": "HFDL · 1200 bps (HF aircraft data link, PSK bursts)",
+  "kind": "real",
+  "file": "real-hfdl-1200.wav",
+  "what": "Bursty PSK at 1800 Bd, 1440 Hz carrier.",
+  "source": "https://www.sigidwiki.com/wiki/HFDL",
+  "duration_s": 2.8
+ },
+ {
+  "id": "real-psk31",
+  "name": "PSK31 (HF amateur, BPSK 31.25 Bd)",
+  "kind": "real",
+  "file": "real-psk31.wav",
+  "what": "A very narrow BPSK signal, about 60 Hz wide.",
+  "source": "https://www.sigidwiki.com/wiki/PSK31",
+  "duration_s": 14.9
+ },
+ {
+  "id": "real-sitor-b",
+  "name": "SITOR-B / NAVTEX (HF maritime, FSK 100 Bd)",
+  "kind": "real",
+  "file": "real-sitor-b.wav",
+  "what": "Two-tone FSK, 170 Hz shift; first 60 s of the recording.",
+  "source": "https://www.sigidwiki.com/wiki/NAVTEX",
+  "duration_s": 60.0
+ },
+ {
+  "id": "real-ale-2g",
+  "name": "2G ALE (HF link establishment, 8-FSK 125 Bd)",
+  "kind": "real",
+  "file": "real-ale-2g.wav",
+  "what": "Eight-tone FSK, MIL-STD-188-141.",
+  "source": "https://www.sigidwiki.com/wiki/Automatic_Link_Establishment_(ALE)",
+  "duration_s": 29.9
+ }
+]

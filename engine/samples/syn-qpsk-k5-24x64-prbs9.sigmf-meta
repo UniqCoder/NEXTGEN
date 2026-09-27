@@ -1,0 +1,15 @@
+{
+ "global": {
+  "core:datatype": "cf32_le",
+  "core:sample_rate": 76800.0,
+  "core:version": "1.0.0",
+  "core:description": "SANJAYA-Gen",
+  "sanjaya:generator": "sanjaya-gen v0"
+ },
+ "captures": [
+  {
+   "core:sample_start": 0
+  }
+ ],
+ "annotations": []
+}

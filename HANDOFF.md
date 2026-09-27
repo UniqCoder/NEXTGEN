@@ -52,6 +52,19 @@
 - Verified in Chrome end to end (drop → blind decode → proof residual at noise floor → signed certificate).
 - Known UI gaps: the in-browser triage heuristic (`triage.ts`) mislabels the Gen QPSK file as voice before the engine runs (R-15); Eye / FSK views are still demo drawings; Scene / Genome show engine emitters only (multi-emitter R-17 and genome D5 not built); job worker is a thread, not the PRD's per-job process with memory cap.
 
+## IN PROGRESS when the session ended (27 Sep evening) — resume here
+User's latest asks: (1) stop emphasising offline mode; lead with problem → solution → how we beat limits nobody else did → **4 strongest USPs**, other innovations as features; (2) a proper plan to a fully working prototype; (3) **real demo recordings selectable in the UI** alongside upload.
+- **Done:** `PROTOTYPE_PLAN.md` (problem, solution, 4 USPs = Proof-of-Decode+certificate · blind coding layer · data-sufficiency + multi-sensor stitching · recipe compiler; features table; phases A–E; sample table). `engine/scripts/make_samples.py` builds `engine/samples/` (manifest.json; 6 synthetic SigMF regenerated from seeds, not committed; 6 real HF WAVs converted from sigidwiki MP3s in `samples/src`: STANAG 4285, MIL-188-110A, HFDL, PSK31, SITOR-B, 2G ALE). Mono WAV now lifted to analytic signal (`io.read_wav`). New `measure.occupied_band`, `measure.band_measure` (band-limited rate line + FSK tones).
+- **Not yet right:** measurements on the real files are NOT accurate yet (last run: STANAG band collapsed to one bin; symbol rates wrong except PSK31 earlier; tone lists noisy). Do not show them in the UI until they match the published parameters (STANAG 4285 / 188-110A: 2400 Bd @ 1800 Hz; HFDL 1800 Bd @ 1440 Hz; PSK31 31.25 Bd; SITOR-B 2 tones 170 Hz, 100 Bd; ALE 8 tones, 125 Bd). Likely fixes: floor from populated bins with a better percentile, fixed RRC-free band edges (−20 dB), |x|² line search in a baud-plausible range on the band-limited signal, FSK tone detection on a longer FFT.
+- **Next steps, in order:**
+  1. Fix real-file measurements (above) and add a test comparing them to the published values.
+  2. API: `GET /v1/samples` (manifest) and `POST /v1/jobs?sample=<id>`; **partial results** when the search is undecided (spectrogram, PSD, measured band/rate/tones, reason) instead of nothing.
+  3. UI: Ingest "Recent recordings" → engine sample list (click = run); keep upload; undecided jobs show real Signal page + an "undecided because…" panel on Decoding/Header/Proof/Certificate.
+  4. UI copy: drop offline-first wording (Ingest subtitle "nothing leaves this machine", status-bar "Offline" chip); lead with the problem/proof.
+  5. Then PROTOTYPE_PLAN Phase B (more modulations + classification).
+- **C++ compiler still missing:** the admin-mode workload install did not complete from the session. User must open Visual Studio Installer → Modify Build Tools 2026 (D:\tools) → tick "Desktop development with C++". Not blocking (NumPy path).
+- Browser testing: `sanjaya serve --port 8765 --token demo123`, open `http://127.0.0.1:8765/?token=demo123`; to drop a file from a script, copy it into `ui/dist/_test/` (git-ignored) and dispatch a DragEvent on `.drop`.
+
 ## Next actions
 1. **Remaining G1 items:** C++ Viterbi within 0.2 dB of oracle (needs toolchain above); Gen v1 taps (clock drift, more mods); FastAPI + UI adapter + visual-regression baseline; Tauri sidecar freeze spike; E1 + E3 v0; sealed-set seed hashes.
 2. **G2 path (critical):** blind conv-code + block/conv interleaver ID (GF(2) rank from `_build/feasibility.py`), orchestrator v1, proof calibration on Tiers 1-2, QAM/OQPSK.
