@@ -3,26 +3,25 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { LUTS } from '../lib/colormap'
-import { SCENARIO, SPEC, freqBin, spectrogram } from '../lib/mock'
+import { SCENARIO, SPEC, freqBin, spectrogram } from '../lib/engine'
 import { css } from '../lib/plot'
 import { useApp } from '../lib/store'
 
-// dB is packed into bytes over a fixed window; the shader unpacks and applies floor/span.
-const LO = -110, RANGE = 60
+// dB is packed into bytes over the scenario's window (SCENARIO.view); the shader unpacks and applies floor/span.
 // World size of the data plane: frequency across, time into the screen.
 const W = 4.6, D = 3.0, H = 1.4
 
 const vert = /* glsl */ `
 uniform sampler2D uData;
-uniform float uK, uFloor, uSpan, uFail, uH, uRise, uScroll;
+uniform float uK, uFloor, uSpan, uFail, uH, uRise, uScroll, uLo, uRange;
 varying float vT; varying float vRed; varying float vDepth; varying float vRow; varying float vDb; varying vec2 vUv;
 void main() {
   vUv = uv;
   float row = fract(uv.y + uScroll);
   vRow = row;
   vec4 d = texture2D(uData, vec2(uv.x, row));
-  float full = ${LO.toFixed(1)} + d.r * ${RANGE.toFixed(1)};
-  float res = ${LO.toFixed(1)} + mix(d.g, d.b, uFail) * ${RANGE.toFixed(1)};
+  float full = uLo + d.r * uRange;
+  float res = uLo + mix(d.g, d.b, uFail) * uRange;
   float w = 0.28;
   float kk = clamp((uK * (1.0 + w) - row) / w, 0.0, 1.0);
   kk = kk * kk * (3.0 - 2.0 * kk);
@@ -30,7 +29,7 @@ void main() {
   vDb = db;
   float t = clamp((db - uFloor) / uSpan, 0.0, 1.0);
   vT = t;
-  vRed = uFail * kk * smoothstep(1.5, 6.0, (d.b - d.g) * ${RANGE.toFixed(1)});
+  vRed = uFail * kk * smoothstep(1.5, 6.0, (d.b - d.g) * uRange);
   // intro: the landscape rises out of the noise, far edge first
   float rise = clamp(uRise * 1.7 - (1.0 - uv.y) * 0.7, 0.0, 1.0);
   rise = rise * rise * (3.0 - 2.0 * rise);
@@ -44,7 +43,7 @@ void main() {
 const frag = /* glsl */ `
 uniform sampler2D uRamp;
 uniform vec3 uFog, uFault, uGrid, uScanCol;
-uniform float uFogNear, uFogFar, uTime, uScan, uGlow;
+uniform float uFogNear, uFogFar, uTime, uScan, uGlow, uTGrid;
 varying float vT; varying float vRed; varying float vDepth; varying float vRow; varying float vDb; varying vec2 vUv;
 
 float gridLine(float x) {
@@ -69,7 +68,7 @@ void main() {
 
   // instrument grid on the surface: 2 kHz minor, 10 kHz major, 50 s rows
   float fMinor = gridLine(vUv.x * 24.0), fMajor = gridLine(vUv.x * 4.8);
-  float tLine = gridLine(vRow * ${(SCENARIO.file.duration / 50).toFixed(4)});
+  float tLine = gridLine(vRow * uTGrid);
   c += uGrid * (fMinor * 0.035 + fMajor * 0.09 + tLine * 0.05) * (1.0 - vT);
 
   // scan line sweeping through time
@@ -122,7 +121,8 @@ function Surface(props: TerrainProps) {
   const data = useMemo(() => {
     const n = SPEC.bins * SPEC.rows
     const buf = new Uint8Array(n * 4)
-    const pack = (v: number) => Math.max(0, Math.min(255, Math.round(((v - LO) / RANGE) * 255)))
+    const { lo, range } = SCENARIO.view
+    const pack = (v: number) => Math.max(0, Math.min(255, Math.round(((v - lo) / range) * 255)))
     for (let i = 0; i < n; i++) {
       buf[i * 4] = pack(spec.full[i])
       buf[i * 4 + 1] = pack(spec.resid[i])
@@ -157,6 +157,8 @@ function Surface(props: TerrainProps) {
           uRise: { value: 0 }, uScroll: { value: 0 }, uScan: { value: 0 }, uGlow: { value: 1 },
           uFog: { value: new THREE.Color() }, uFault: { value: new THREE.Color() }, uGrid: { value: new THREE.Color() },
           uScanCol: { value: new THREE.Color() }, uFogNear: { value: 4.5 }, uFogFar: { value: 9.5 },
+          uLo: { value: SCENARIO.view.lo }, uRange: { value: SCENARIO.view.range },
+          uTGrid: { value: SCENARIO.file.duration / SCENARIO.view.gridSeconds },
         },
       }),
     [data],
@@ -211,6 +213,20 @@ function Surface(props: TerrainProps) {
   )
 }
 
+/** Frequency ticks in kHz inside +-fs/2 (demo: -20..20 every 10). */
+function fTicks() {
+  const half = SPEC.fs / 2000, step = [1, 2, 5, 10, 20, 50, 100, 200, 500].find((s) => half / s <= 3) ?? 1000
+  const out: number[] = []
+  for (let f = -Math.floor(half / step) * step; f <= half; f += step) if (Math.abs(f) < half) out.push(f)
+  return out
+}
+/** Time ticks every `every` grid steps (demo: 0..250 every 50 s). */
+function tTicks(every: number) {
+  const out: number[] = []
+  for (let t = 0; t <= SCENARIO.file.duration + 1e-9; t += SCENARIO.view.gridSeconds * every) out.push(+t.toFixed(3))
+  return out
+}
+
 /** Height of a dB value on the surface, matching the vertex shader. */
 const yOf = (db: number, floor: number, span: number) => Math.pow(Math.max(0, Math.min(1, (db - floor) / span)), 1.45) * H
 
@@ -222,8 +238,8 @@ function AxisFrame({ floor, span }: { floor: number; span: number }) {
     const seg = (a: number[], b: number[]) => pts.push(...a, ...b)
     const x0 = -W / 2, x1 = W / 2, zf = D / 2, zb = -D / 2
     seg([x0, 0, zf], [x1, 0, zf]); seg([x1, 0, zf], [x1, 0, zb]); seg([x0, 0, zb], [x1, 0, zb]); seg([x0, 0, zf], [x0, 0, zb])
-    for (const f of [-20, -10, 0, 10, 20]) { const x = (f / 48) * W; seg([x, 0, zf], [x, 0, zf + 0.09]) }
-    for (const sec of [0, 50, 100, 150, 200, 250]) { const z = -(sec / SCENARIO.file.duration - 0.5) * D; seg([x1, 0, z], [x1 + 0.09, 0, z]) }
+    for (const f of fTicks()) { const x = ((f * 1000) / SPEC.fs) * W; seg([x, 0, zf], [x, 0, zf + 0.09]) }
+    for (const sec of tTicks(1)) { const z = -(sec / SCENARIO.file.duration - 0.5) * D; seg([x1, 0, z], [x1 + 0.09, 0, z]) }
     seg([x0, 0, zb], [x0, H, zb])
     for (let db = Math.ceil(floor / 10) * 10; db <= floor + span; db += 10) { const y = yOf(db, floor, span); seg([x0, y, zb], [x0 - 0.09, y, zb]) }
     const g = new THREE.BufferGeometry()
@@ -313,22 +329,21 @@ export function Terrain(props: TerrainProps) {
     const peak = (f: number) => {
       const b = Math.round(freqBin(f))
       let m = -200
-      for (let y = 24; y < SPEC.rows; y++) m = Math.max(m, s.full[y * SPEC.bins + b])
+      for (let y = SCENARIO.view.rowStart; y < SPEC.rows; y++) m = Math.max(m, s.full[y * SPEC.bins + b])
       return m
     }
-    const at = (f: number, row: number, db: number) => new THREE.Vector3(((f + 24000) / 48000 - 0.5) * W, yOf(db, props.floor, props.span) + 0.03, -(row - 0.5) * D)
+    const at = (f: number, row: number, db: number) => new THREE.Vector3(((f + SPEC.fs / 2) / SPEC.fs - 0.5) * W, yOf(db, props.floor, props.span) + 0.03, -(row - 0.5) * D)
     const em = SCENARIO.emitters
+    const e1 = em[0], e2 = em.find((e) => e.id === 'E2'), e3 = em.find((e) => e.id === 'E3')
     const out: Label[] = [
-      { kind: 'emitter', text: gone ? 'E1 · subtracted' : 'E1 · QPSK signal', sub: gone ? 'only noise is left' : '2400 Bd · 16 dB SNR · decoded', pos: at(3512, props.hero ? 0.62 : 0.55, gone ? -100 : peak(3512)) },
+      { kind: 'emitter', text: gone ? 'E1 · subtracted' : e1.label, sub: gone ? 'only noise is left' : e1.sub, pos: at(e1.fc, props.hero ? 0.62 : 0.55, gone ? props.floor + 4 : peak(e1.fc)) },
     ]
     if (props.hero) return out
-    out.push(
-      { kind: 'emitter', text: 'E3 · steady carrier', sub: 'CW · 30 dB', pos: at(-17500, 0.55, peak(-17500)) },
-      { kind: 'emitter', text: 'E2 · short bursts', sub: 'unknown type', pos: at((em[1].f0 + em[1].f1) / 2, 0.61, -92) },
-    )
-    for (const f of [-20, -10, 0, 10, 20])
-      out.push({ kind: 'axis', text: (f > 0 ? '+' : '') + f, pos: new THREE.Vector3((f / 48) * W, 0, D / 2 + 0.22) })
-    for (const sec of [0, 100, 200])
+    if (e3) out.push({ kind: 'emitter', text: e3.label, sub: e3.sub, pos: at(e3.fc, 0.55, peak(e3.fc)) })
+    if (e2) out.push({ kind: 'emitter', text: e2.label, sub: e2.sub, pos: at((e2.f0 + e2.f1) / 2, 0.61, props.floor + 12) })
+    for (const f of fTicks())
+      out.push({ kind: 'axis', text: (f > 0 ? '+' : '') + f, pos: new THREE.Vector3(((f * 1000) / SPEC.fs) * W, 0, D / 2 + 0.22) })
+    for (const sec of tTicks(2))
       out.push({ kind: 'axis', text: sec + ' s', pos: new THREE.Vector3(W / 2 + 0.3, 0, -(sec / SCENARIO.file.duration - 0.5) * D) })
     for (let db = Math.ceil(props.floor / 10) * 10; db <= props.floor + props.span; db += 20)
       out.push({ kind: 'axis', text: db + ' dB', pos: new THREE.Vector3(-W / 2 - 0.3, yOf(db, props.floor, props.span), -D / 2) })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { SCENARIO, bandOf, fmtHz } from '../lib/mock'
+import { SCENARIO, bandOf, fmtHz } from '../lib/engine'
 import { setState, useApp } from '../lib/store'
 import { Conf, MethodTag, Seg } from './ui'
 

@@ -102,7 +102,9 @@ function raw(f: File, v: DataView, sig: ReturnType<typeof parseSigmf>): Ingested
     size: f.size,
     route: 'iq',
     findings,
-    guess: { dtype: sig?.dtype ?? best?.dtype ?? 'ci16', endian: best?.endian ?? 'LE', order: 'IQ', fs: sig?.fs ?? null, fc: sig?.fc ?? null, interp: 'iq' },
+    // SigMF names ("cf32_le") -> the override form's names ("cf32" + endianness)
+    guess: { dtype: sig?.dtype ? sig.dtype.replace(/_(le|be)$/, '') : best?.dtype ?? 'ci16',
+      endian: sig?.dtype ? (sig.dtype.endsWith('_be') ? 'BE' : 'LE') : best?.endian ?? 'LE', order: 'IQ', fs: sig?.fs ?? null, fc: sig?.fc ?? null, interp: 'iq' },
     content: best ? iqTriage(v, best.dtype, best.endian === 'LE') : null,
   }
 }

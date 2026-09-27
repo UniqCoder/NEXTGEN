@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Fingerprint } from '../components/Plots'
 import { Seg } from '../components/ui'
-import { GENOME } from '../lib/mock'
+import { GENOME, SCENARIO } from '../lib/engine'
 
 export function Genome() {
   const [band, setBand] = useState<'all' | 'HF' | 'VHF' | 'UHF'>('all')
@@ -17,20 +17,20 @@ export function Genome() {
           <h2>Named standards in this recording</h2>
         </div>
         <div className="match-cards">
-          <div className="mc hit">
+          {SCENARIO.emitters.some((e) => e.id === 'E4') && <div className="mc hit">
             <span className="label">E4 · 2-FSK 50 Bd</span>
             <span className="mc-n">RTTY 50 / 450</span>
             <span className="mono small">match 0.93 · shift 450 Hz · ITA2 framing seen</span>
+          </div>}
+          <div className="mc">
+            <span className="label">{SCENARIO.text.genomeE1.label}</span>
+            <span className="mc-n">{SCENARIO.text.genomeE1.name}</span>
+            <span className="mono small">{SCENARIO.text.genomeE1.note}</span>
           </div>
           <div className="mc">
-            <span className="label">E1 · QPSK 2400 Bd</span>
-            <span className="mc-n">No named standard</span>
-            <span className="mono small">closest MIL-STD-188-110A · 0.22 (it uses 8PSK)</span>
-          </div>
-          <div className="mc">
-            <span className="label">Sampling frequency · back-solved</span>
-            <span className="mc-n mono">48 000<span className="unit">Hz</span></span>
-            <span className="mono small">RTTY clock 49.99984 Bd ⇒ clock error −3.2 ppm</span>
+            <span className="label">{SCENARIO.text.genomeFs.title}</span>
+            <span className="mc-n mono">{SCENARIO.text.genomeFs.value}<span className="unit">Hz</span></span>
+            <span className="mono small">{SCENARIO.text.genomeFs.note}</span>
           </div>
         </div>
       </header>

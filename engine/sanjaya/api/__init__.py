@@ -1,0 +1,179 @@
+"""Local engine API (PRD §6.8): FastAPI on 127.0.0.1 only. Every /v1 request needs the per-launch token in
+X-Sanjaya-Token; the Host header must be 127.0.0.1:<port> or localhost:<port> (anti DNS-rebinding); an Origin,
+when sent, must be on the allowlist; no CORS wildcard. `sanjaya serve` also hosts ui/dist (browser mode)."""
+import json, threading, time, uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+import numpy as np
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+from .. import __version__
+from ..kernels import BACKEND
+
+STAGE_OF = {"measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
+DEV_ORIGIN = "http://localhost:5173"
+
+
+@dataclass
+class Job:
+    id: str
+    name: str
+    path: Path
+    state: str = "queued"                    # queued | running | done | undecided | error
+    stages: list[str] = field(default_factory=lambda: ["pending"] * 8)
+    error: str | None = None
+    log: list[dict] = field(default_factory=list)
+    result: dict | None = None
+    cert: dict | None = None
+    started: float = field(default_factory=time.time)
+
+
+def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None):
+    from ..io import load, sha256_file
+    from ..search import blind_search, SearchError
+    from ..proof.certificate import build_body, sign
+    from .scenario import build
+    job.state = "running"
+    job.stages[0] = "running"
+    try:
+        x, fs_, data = load(job.path, fs, dtype)
+        sha = sha256_file(data)
+
+        def on_step(s):
+            job.log.append({"stage": s.stage, "finding": s.finding, "method": s.method})
+            for i in STAGE_OF.get(s.stage, ()):
+                job.stages[i] = "done"
+            nxt = next((i for i, v in enumerate(job.stages[:6]) if v == "pending"), None)
+            if nxt is not None:
+                job.stages[nxt] = "running"
+        try:
+            recipe, log = blind_search(x, fs_, on_step)
+        except SearchError as e:
+            job.state, job.error = "undecided", str(e)
+            job.stages = ["failed" if v == "running" else v for v in job.stages]
+            return
+        body = build_body(x, recipe, sha, "search")
+        job.cert = sign(body)
+        suffix = job.path.suffix.lower()
+        meta = {"name": job.name, "path": str(job.path), "size": job.path.stat().st_size, "sha256": sha,
+                "format": {".wav": "WAV", ".sigmf-data": "SigMF"}.get(suffix, "Raw IQ") + (f" · {dtype}" if dtype else ""),
+                "route": "wav" if suffix == ".wav" else "iq",
+                "source_fs": "WAV header" if suffix == ".wav" else ("SigMF core:sample_rate" if suffix == ".sigmf-data" else "analyst entry"),
+                "fc_hz": fc_hz,
+                "forensics": [
+                    {"k": "Container", "v": {"wav": "WAV (RIFF)", "iq": "SigMF" if suffix == ".sigmf-data" else "None (headerless)"}["wav" if suffix == ".wav" else "iq"],
+                     "conf": 1, "method": "blind", "note": ""},
+                    {"k": "Sample rate", "v": f"{fs_:,.0f} Hz".replace(",", " "), "conf": 1, "method": "blind", "note": "from the header" if suffix != "" else ""},
+                    {"k": "Samples", "v": f"{x.size:,}".replace(",", " "), "conf": None, "method": "blind", "note": f"{x.size / fs_:.2f} s"},
+                    {"k": "SHA-256", "v": sha[:16] + "…", "conf": None, "method": "blind", "note": "recorded in the certificate"},
+                ]}
+        res = build(x, fs_, recipe, body, log, meta)
+        res["scenario"]["cert"].update({"key": f"ed25519:{job.cert.get('key_id')}", "sig": (job.cert.get("signature") or "UNSIGNED")[:12] + "…",
+                                        "issued": job.cert["issued_utc"]})
+        job.result = res
+        job.stages[:6] = ["done"] * 6
+        job.state = "done"
+    except Exception as e:                                          # the API survives; the job reports why
+        job.state, job.error = "error", f"{type(e).__name__}: {e}"
+        job.stages = ["failed" if v == "running" else v for v in job.stages]
+
+
+def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None, dev: bool = False) -> FastAPI:
+    app = FastAPI(title="SANJAYA engine", version=__version__, docs_url=None, redoc_url=None)
+    jobs: dict[str, Job] = {}
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"} | ({DEV_ORIGIN} if dev else set())
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        if request.headers.get("host") not in hosts:
+            return JSONResponse({"detail": "host not allowed"}, 403)
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in origins:
+            return JSONResponse({"detail": "origin not allowed"}, 403)
+        if request.method == "OPTIONS" and origin:
+            return Response(status_code=204, headers={"Access-Control-Allow-Origin": origin, "Vary": "Origin",
+                                                      "Access-Control-Allow-Headers": "X-Sanjaya-Token, Content-Type",
+                                                      "Access-Control-Allow-Methods": "GET, POST"})
+        if request.url.path.startswith("/v1/") and request.headers.get("x-sanjaya-token") != token:
+            return JSONResponse({"detail": "missing or wrong X-Sanjaya-Token"}, 401)
+        resp = await call_next(request)
+        if request.url.path in ("/", "/index.html"):
+            resp.headers["Cache-Control"] = "no-cache"               # a rebuilt UI is never masked by a stale page
+        if origin:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Expose-Headers"] = "X-Rows, X-Bins"
+            resp.headers["Vary"] = "Origin"
+        return resp
+
+    def job_or_404(jid: str) -> Job:
+        if jid not in jobs:
+            raise HTTPException(404, "no such job")
+        return jobs[jid]
+
+    @app.get("/v1/health")
+    def health():
+        return {"engine_version": __version__, "kernels": BACKEND, "jobs": len(jobs)}
+
+    @app.post("/v1/jobs")
+    async def create_job(request: Request, name: str, fs: float | None = None, dtype: str | None = None,
+                         fc_hz: float | None = None, path: str | None = None, sigmf: str | None = None):
+        """Browser mode uploads the bytes (body); desktop mode passes ?path= to a local file."""
+        jid = uuid.uuid4().hex[:12]
+        if path:
+            src = Path(path)
+            if not src.is_file():
+                raise HTTPException(400, "path is not a file")
+        else:
+            d = workdir / jid
+            d.mkdir(parents=True, exist_ok=True)
+            src = d / Path(name).name
+            with open(src, "wb") as f:
+                async for chunk in request.stream():
+                    f.write(chunk)
+            if sigmf:                                              # sidecar forwarded by the UI: validated JSON only
+                try:
+                    meta = json.loads(sigmf)
+                    assert isinstance(meta.get("global"), dict)
+                except (ValueError, AssertionError):
+                    raise HTTPException(400, "sigmf is not a SigMF metadata object")
+                src.with_suffix(".sigmf-meta").write_text(json.dumps(meta))
+                src = src.with_suffix(".sigmf-data") if src.suffix != ".sigmf-data" else src
+        job = Job(jid, Path(name).name, src)
+        jobs[jid] = job
+        threading.Thread(target=_run, args=(job, fs, dtype, fc_hz), daemon=True).start()
+        return {"id": jid}
+
+    @app.get("/v1/jobs/{jid}")
+    def job_status(jid: str):
+        j = job_or_404(jid)
+        v = j.result["scenario"]["view"]["verdict"] if j.result else None
+        return {"id": j.id, "name": j.name, "state": j.state, "stages": j.stages, "error": j.error, "log": j.log, "verdict": v}
+
+    @app.get("/v1/jobs/{jid}/scenario")
+    def scenario(jid: str):
+        j = job_or_404(jid)
+        if not j.result:
+            raise HTTPException(409, f"job is {j.state}")
+        return {k: v for k, v in j.result.items() if k != "spectrogram"}
+
+    @app.get("/v1/jobs/{jid}/spectrogram/{kind}")
+    def spectrogram(jid: str, kind: str):
+        j = job_or_404(jid)
+        if not j.result or kind not in j.result["spectrogram"]:
+            raise HTTPException(404, "not available")
+        a = np.ascontiguousarray(j.result["spectrogram"][kind], np.float32)
+        return Response(a.tobytes(), media_type="application/octet-stream",
+                        headers={"X-Rows": str(a.shape[0]), "X-Bins": str(a.shape[-1] if a.ndim == 2 else 1)})
+
+    @app.get("/v1/jobs/{jid}/certificate.json")
+    def certificate(jid: str):
+        j = job_or_404(jid)
+        if not j.cert:
+            raise HTTPException(409, f"job is {j.state}")
+        return JSONResponse(j.cert)
+
+    if ui_dist is not None and ui_dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
+    return app

@@ -4,7 +4,7 @@ import { Panel, Seg } from '../components/ui'
 import { DisplayMenu, Step } from '../components/Step'
 import { Waterfall, type Overlay } from '../components/Waterfall'
 import { Terrain } from '../components/Terrain'
-import { SCENARIO, gauss, prng } from '../lib/mock'
+import { SCENARIO, gauss, prng } from '../lib/engine'
 import { css, prep, useSize } from '../lib/plot'
 import { go } from '../lib/router'
 import { prove, setState, skipProof, useApp } from '../lib/store'
@@ -25,7 +25,7 @@ export function Proof() {
   const e1 = SCENARIO.emitters[0]
   const overlays: Overlay[] = [{
     ...e1, alpha: 1,
-    label: proof === 'pass' ? 'E1 · PROVEN' : `E1 · ${override ?? 'QPSK'} · 2400 Bd`,
+    label: proof === 'pass' ? 'E1 · PROVEN' : `E1 · ${override ?? SCENARIO.text.mod} · ${SCENARIO.text.baud} Bd`,
     tone: proof === 'pass' ? 'proof' : fail ? 'bone' : 'signal',
   }]
 

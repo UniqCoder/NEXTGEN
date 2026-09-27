@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { SCENARIO } from './mock'
+import { ENGINE, SCENARIO, runJob } from './engine'
 
 export type StageStatus = 'pending' | 'running' | 'done' | 'failed' | 'override'
 export type ProofState = 'idle' | 'running' | 'pass' | 'fail'
@@ -22,6 +22,10 @@ export interface AppState {
   fcHz: number | null // analyst-entered centre frequency
   floor: number // waterfall display range, dB
   span: number
+  engine: 'demo' | 'connected' // demo = no engine reachable; the flow runs on the demo capture
+  job: 'idle' | 'running' | 'done' | 'undecided' | 'error'
+  jobNote: string | null // the engine's reason when it is undecided or failed
+  dataVersion: number // bumps when engine results replace the demo data; pages remount on it
 }
 
 const READY: StageStatus[] = ['done', 'done', 'done', 'done', 'done', 'done', 'pending', 'pending']
@@ -44,6 +48,10 @@ let state: AppState = {
   fcHz: null,
   floor: -104,
   span: 44,
+  engine: 'demo',
+  job: 'idle',
+  jobNote: null,
+  dataVersion: 0,
 }
 
 const listeners = new Set<() => void>()
@@ -74,7 +82,28 @@ const clear = () => { timers.forEach(clearTimeout); timers = [] }
 const setStage = (i: number, s: StageStatus) =>
   setState((st) => ({ stages: st.stages.map((v, j) => (j === i ? s : v)) }))
 
+// the recording the analyst dropped, run by the engine when one is connected
+type JobOpts = { fs?: number | null; dtype?: string | null; fc?: number | null; sigmf?: string | null }
+let pending: { file: File; opts: JobOpts } | null = null
+export function setPending(file: File | null, opts: JobOpts = {}) {
+  pending = file ? { file, opts } : null
+}
+
+async function runEngine(p: NonNullable<typeof pending>) {
+  clear()
+  setState({ stages: Array(8).fill('pending'), proof: 'idle', proofT: 0, loopBack: false, cancelled: [], job: 'running', jobNote: null })
+  try {
+    const st = await runJob(p.file, p.opts, (s) => setState({ stages: s.stages.map((x) => x) as StageStatus[] }))
+    if (st.state === 'done')
+      setState((s) => ({ job: 'done', dataVersion: s.dataVersion + 1, floor: SCENARIO.view.floor, span: SCENARIO.view.span, modOverride: null }))
+    else setState({ job: st.state === 'undecided' ? 'undecided' : 'error', jobNote: st.error })
+  } catch (e) {
+    setState({ job: 'error', jobNote: String(e) })
+  }
+}
+
 export function runAutopilot() {
+  if (ENGINE.connected && pending) return void runEngine(pending)
   clear()
   setState({ stages: Array(8).fill('pending'), proof: 'idle', proofT: 0, loopBack: false, cancelled: [] })
   const step = 520
@@ -87,7 +116,7 @@ export function runAutopilot() {
 /** PROVE: re-synthesise, subtract, test residual whiteness. */
 export function prove() {
   clear()
-  const wrong = state.modOverride !== null && state.modOverride !== SCENARIO.params.modulation.value
+  const wrong = (state.modOverride !== null && state.modOverride !== SCENARIO.params.modulation.value) || SCENARIO.view.verdict === 'fail'
   setStage(6, 'running')
   setState({ proof: 'running', proofT: 0, loopBack: false })
   const dur = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 1400

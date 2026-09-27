@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useAnimationControls } from 'motion/react'
 import { Panel, Scrub } from '../components/ui'
 import { Step } from '../components/Step'
 import { Autocorr } from '../components/Plots'
-import { FRAME, bitstream, columnStats, crcSearch, findSync } from '../lib/mock'
+import { FRAME, SCENARIO, bitstream, columnStats, crcSearch, findSync } from '../lib/engine'
 import { css, prep, useSize } from '../lib/plot'
 import { useApp } from '../lib/store'
 
@@ -16,7 +16,7 @@ export function Frames() {
   const sync = useMemo(() => findSync(stream), [stream])
   const crc = useMemo(() => crcSearch(stream, sync), [stream, sync])
   // Autopilot arrives with the answer; Expert starts from the raw stream
-  const [w, setW] = useState(autopilot ? FRAME.len : 173)
+  const [w, setW] = useState(autopilot ? FRAME.len : FRAME.len - 19)
   const [phase, setPhase] = useState(() => (autopilot ? findSync(bitstream().stream) : 0))
   const [snapFlash, setSnapFlash] = useState(0)
   const shake = useAnimationControls()
@@ -45,24 +45,34 @@ export function Frames() {
   }
 
   const header = FRAME.fields.filter((f) => f.group === 'HEADER')
+  const pay = FRAME.fields.filter((f) => f.group === 'PAYLOAD')
+  const payFrom = pay.length ? pay[0].start : 0, payTo = pay.length ? pay[pay.length - 1].start + pay[pay.length - 1].len : 0
+  const crcField = FRAME.fields.find((f) => f.kind === 'crc')
+  const bits = (g: string) => FRAME.fields.filter((f) => f.group === g).reduce((s, f) => s + f.len, 0)
+  const names = (g: string) => FRAME.fields.filter((f) => f.group === g).map((f) => (f.name === 'LEN' ? 'length' : f.name.toLowerCase())).join(', ')
+  const encrypted = pay.some((f) => /encrypted/.test(f.note))
   const counterOk = useMemo(() => {
+    const ctr = FRAME.fields.find((f) => f.kind === 'counter')
     let ok = 0, n = 0
+    if (!ctr) return { ok, n }
+    const mod = 2 ** ctr.len
     for (let k = 1; sync + (k + 1) * FRAME.len <= stream.length; k++, n++) {
-      const rd = (s: number) => { let v = 0; for (let i = 0; i < 16; i++) v = (v << 1) | stream[s + 24 + i]; return v }
-      if (rd(sync + k * FRAME.len) === rd(sync + (k - 1) * FRAME.len) + 1) ok++
+      const rd = (s: number) => { let v = 0; for (let i = 0; i < ctr.len; i++) v = v * 2 + stream[s + ctr.start + i]; return v }
+      if (rd(sync + k * FRAME.len) === (rd(sync + (k - 1) * FRAME.len) + 1) % mod) ok++
     }
     return { ok, n }
   }, [stream, sync])
   const payloadEnt = useMemo(() => {
-    if (!aligned) return null
+    if (!aligned || payTo <= payFrom) return null
     let s = 0
-    for (let c = 56; c < 176; c++) s += stats.ent[c]
-    return s / 120
-  }, [aligned, stats])
+    for (let c = payFrom; c < payTo; c++) s += stats.ent[c]
+    return s / (payTo - payFrom)
+  }, [aligned, stats, payFrom, payTo])
 
   const replay = () => {
-    setW(173); setPhase(0)
-    setTimeout(() => animateTo(FRAME.len, setW, 173, () => { snap(); setTimeout(() => animateTo(sync, setPhase, 0), 350) }), 400)
+    const w0 = FRAME.len - 19
+    setW(w0); setPhase(0)
+    setTimeout(() => animateTo(FRAME.len, setW, w0, () => { snap(); setTimeout(() => animateTo(sync, setPhase, 0), 350) }), 400)
   }
 
   return (
@@ -70,8 +80,8 @@ export function Frames() {
       n={4}
       title="Header & payload"
       lede={aligned
-        ? <>Frames repeat every <b>192 bits</b>. The <b>header</b> is 56 bits (sync, counter, length, type). The <b>payload</b> is 120 bits of high-entropy data, likely encrypted. A CRC-16 closes each frame.</>
-        : locked ? 'The frame length is 192 bits. Now align to the sync word so the fields can be labelled.'
+        ? <>Frames repeat every <b>{FRAME.len} bits</b>. The <b>header</b> is {bits('HEADER')} bits ({names('HEADER')}). The <b>payload</b> is {bits('PAYLOAD')} bits of {encrypted ? 'high-entropy data, likely encrypted' : 'data'}.{crcField ? ` A CRC-${crcField.len} closes each frame.` : ''}</>
+        : locked ? `The frame length is ${FRAME.len} bits. Now align to the sync word so the fields can be labelled.`
         : 'Find the frame length: drag Width until the columns go straight, or press Find frame length.'}
       back={{ to: '/decoding', label: 'Decoding' }}
       next={{ to: '/proof', label: 'Continue to proof', disabled: !doneStage }}
@@ -103,9 +113,9 @@ export function Frames() {
               <AnimatePresence>
                 {aligned && (
                   <motion.div className="brackets" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-                    <Bracket from={0} to={56} total={w} label="HEADER" big />
-                    <Bracket from={56} to={176} total={w} label="PAYLOAD" big />
-                    <Bracket from={176} to={192} total={w} label="CRC" big />
+                    <Bracket from={0} to={payFrom} total={w} label="HEADER" big />
+                    {payTo > payFrom && <Bracket from={payFrom} to={payTo} total={w} label="PAYLOAD" big />}
+                    {crcField && <Bracket from={crcField.start} to={crcField.start + crcField.len} total={w} label="CRC" big />}
                     {header.map((f) => <Bracket key={f.name} from={f.start} to={f.start + f.len} total={w} label={f.name} />)}
                   </motion.div>
                 )}
@@ -239,28 +249,24 @@ function Raster({ stream, w, phase, ent, aligned, flash }: { stream: Uint8Array;
 }
 
 function ksy() {
+  const hexBytes = (v: number, bits: number) => {
+    const out: string[] = []
+    for (let i = bits - 8; i >= 0; i -= 8) out.push('0x' + (Math.floor(v / 2 ** i) % 256).toString(16).padStart(2, '0'))
+    return out.join(', ')
+  }
+  const lines = FRAME.fields.map((f) => {
+    const id = f.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    if (f.name === 'SYNC' && f.len % 8 === 0) return `  - id: ${id}\n    contents: [${hexBytes(FRAME.sync, f.len)}]`
+    if (f.kind === 'random' && f.len % 8 === 0) return `  - id: ${id}\n    size: ${f.len / 8}\n    doc: ${f.note}`
+    return `  - id: ${id}\n    type: b${f.len}\n    doc: ${f.note}`
+  })
   return `meta:
   id: sanjaya_frame
-  title: Frame recovered from sanjaya-gen_0042.iq
+  title: Frame recovered from ${SCENARIO.file.name}
   endian: be
   bit-endian: be
 seq:
-  - id: sync
-    contents: [0xfa, 0xf3, 0x20]
-  - id: counter
-    type: b16
-    doc: increments by 1 per frame
-  - id: len
-    type: b8
-    doc: payload length in bytes (0x0F)
-  - id: frame_type
-    type: b8
-  - id: payload
-    size: 15
-    doc: high entropy, likely encrypted
-  - id: crc16
-    type: b16
-    doc: CRC-16/CCITT poly 0x1021 init 0xFFFF over bytes 0..21
+${lines.join('\n')}
 `
 }
 

@@ -34,8 +34,14 @@ def load(path: str | Path, fs: float | None = None, dtype: str | None = None) ->
     p = Path(path)
     if p.suffix in (".sigmf-data", ".sigmf-meta"):
         data, meta = sigmf_paths(p)
-        g = json.loads(meta.read_text())["global"]
-        return read_raw(data, g["core:datatype"]), float(g["core:sample_rate"]), data
+        if meta.exists():
+            g = json.loads(meta.read_text())["global"]
+            return read_raw(data, g["core:datatype"]), float(g["core:sample_rate"]), data
+        if fs is None or dtype is None:                          # data uploaded without its sidecar
+            raise ValueError("SigMF data without its .sigmf-meta: pass the sample rate and datatype")
+        return read_raw(data, dtype), float(fs), data
+    if p.suffix.lower() == ".wav":
+        return read_wav(p) + (p,)
     if fs is None or dtype is None:
         raise ValueError("raw IQ needs --fs and --dtype until dtype sniffing lands (WP01)")
     return read_raw(p, dtype), float(fs), p
@@ -57,3 +63,19 @@ def sha256_file(path: str | Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def read_wav(path: str | Path) -> tuple[np.ndarray, float]:
+    """PCM / float WAV. Two channels are read as I/Q; one channel as real samples (the spectrum is then
+    mirrored; WAV-Lifting, C7, recovers complex baseband later). RF64 / auxi chunks arrive with WP01."""
+    from scipy.io import wavfile
+    fs, d = wavfile.read(path, mmap=True)
+    d = np.asarray(d)
+    scale = {np.dtype("uint8"): None, np.dtype("int16"): 1 / 32768, np.dtype("int32"): 1 / 2 ** 31}.get(d.dtype, 1.0)
+    v = d.astype(np.float32)
+    if scale is None:
+        v = (v - 127.5) / 127.5
+    else:
+        v *= scale
+    x = (v[:, 0] + 1j * v[:, 1]) if v.ndim == 2 and v.shape[1] >= 2 else v.reshape(-1).astype(np.complex64)
+    return x.astype(np.complex64), float(fs)

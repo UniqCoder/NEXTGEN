@@ -3,7 +3,7 @@ import { AnimatePresence } from 'motion/react'
 import { Mark, Seg } from './components/ui'
 import { Palette } from './components/Palette'
 import { Stepper, ToolsMenu } from './components/Step'
-import { SCENARIO } from './lib/mock'
+import { SCENARIO, ping } from './lib/engine'
 import { go, useRoute } from './lib/router'
 import { STEPS, getState, prove, runAutopilot, setState, skipProof, useApp } from './lib/store'
 import { Ingest } from './pages/Ingest'
@@ -39,10 +39,15 @@ export default function App() {
   const route = useRoute()
   const mode = useApp((s) => s.mode)
   const paletteOpen = useApp((s) => s.paletteOpen)
+  const engine = useApp((s) => s.engine)
+  const job = useApp((s) => s.job)
+  const jobNote = useApp((s) => s.jobNote)
+  const dataVersion = useApp((s) => s.dataVersion)
   const Page = ROUTES[route] ?? Ingest
 
   useEffect(() => {
     document.fonts.ready.then(() => setState({ fontsReady: true }))
+    ping().then((ok) => ok && setState({ engine: 'connected' }))
   }, [])
 
   useEffect(() => {
@@ -88,14 +93,18 @@ export default function App() {
         </div>
       </header>
 
-      <main className="page" key={route}>
+      <main className="page" key={route + ':' + dataVersion}>
         <Page />
       </main>
 
       <footer className="statusbar">
-        <span><i className="led amber" /> Engine not connected · demo data</span>
+        {engine === 'demo'
+          ? <span><i className="led amber" /> Engine not connected · demo data</span>
+          : <span><i className={'led ' + (job === 'error' || job === 'undecided' ? 'amber' : 'green')} /> Engine connected · {
+              job === 'running' ? 'analysing…' : job === 'undecided' ? 'undecided: ' + jobNote : job === 'error' ? 'error: ' + jobNote
+              : SCENARIO.view.source === 'demo' ? 'demo data' : 'results from this recording'}</span>}
         <span>Offline</span>
-        <span>{SCENARIO.file.name} · complex int16 · 48 kHz</span>
+        <span>{SCENARIO.file.name} · {SCENARIO.text.format}</span>
         <span className="grow" />
         <span>Ctrl K for every command</span>
       </footer>

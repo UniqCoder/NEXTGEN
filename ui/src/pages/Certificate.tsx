@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import { Mark } from '../components/ui'
 import { exportJSON } from '../components/Palette'
-import { FRAME, SCENARIO, fmtBytes } from '../lib/mock'
+import { FRAME, SCENARIO, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
 import { useApp } from '../lib/store'
 
@@ -56,7 +56,7 @@ export function Certificate() {
         <L className="kv">
           <span>File</span><span className="mono">{SCENARIO.file.name}</span>
           <span>Size</span><span className="mono">{fmtBytes(SCENARIO.file.size)} · {SCENARIO.file.size.toLocaleString('en-IN')} bytes</span>
-          <span>Format</span><span className="mono">Raw IQ · complex int16 · little-endian · I first (inferred)</span>
+          <span>Format</span><span className="mono">{SCENARIO.text.certFormat}</span>
           <span>SHA-256</span><span className="mono hash">{SCENARIO.file.sha256}</span>
           <span>Centre freq.</span><span className="mono">{fcHz ? (fcHz / 1e6).toFixed(4) + ' MHz (analyst-entered)' : 'not provided'}</span>
         </L>
@@ -95,7 +95,7 @@ export function Certificate() {
             </div>
           ))}
         </L>
-        <L className="small dim">192-bit frames · sync 0xFAF320 · CRC-16/CCITT verified on 95 / 95 complete frames · payload high-entropy (not decrypted).</L>
+        <L className="small dim">{SCENARIO.text.frameLine}</L>
 
         <L className="cert-sec"><span className="label">Signature</span></L>
         <L className="cert-sig">
@@ -104,10 +104,10 @@ export function Certificate() {
             <span>Issued</span><span className="mono">{SCENARIO.cert.issued}</span>
             <span>Signing key</span><span className="mono">{SCENARIO.cert.key}</span>
             <span>Signature</span><span className="mono">{SCENARIO.cert.sig}</span>
-            <span>Verify</span><span className="mono">sanjaya verify {SCENARIO.cert.id}.json</span>
+            <span>Verify</span><span className="mono">sanjaya verify {SCENARIO.file.name} {SCENARIO.cert.id}.json</span>
           </div>
         </L>
-        <L className="cert-foot mono">Preview: signature fields are placeholders until the engine signs certificates.</L>
+        {SCENARIO.view.source === 'demo' && <L className="cert-foot mono">Preview: signature fields are placeholders until the engine signs certificates.</L>}
       </article>
     </div>
   )

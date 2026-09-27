@@ -57,8 +57,19 @@ def discover_frames(ys: np.ndarray, pmin: int = 16, pmax: int = 8192):
     return None
 
 
-def blind_search(x: np.ndarray, fs: float) -> tuple[Recipe, list[Step]]:
+def blind_search(x: np.ndarray, fs: float, on_step=None) -> tuple[Recipe, list[Step]]:
+    """on_step(step) is called as each stage completes (progress for the API / UI)."""
     log: list[Step] = []
+    if on_step is not None:
+        class _Log(list):
+            def append(self, s):
+                super().append(s)
+                on_step(s)
+
+            def extend(self, it):
+                for s in it:
+                    self.append(s)
+        log = _Log()
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
     rs0 = symbol_rate_blind(x, fs)
     cfo0 = cfo_power(x, fs, 4)

@@ -5,7 +5,7 @@ import { Waterfall, type Overlay } from '../components/Waterfall'
 import { Terrain } from '../components/Terrain'
 import { Constellation, Eye, InstFreq, PSD } from '../components/Plots'
 import { Params } from '../components/Params'
-import { SCENARIO } from '../lib/mock'
+import { SCENARIO } from '../lib/engine'
 import { runAutopilot, setState, useApp } from '../lib/store'
 
 type View = 'const' | 'eye' | 'fsk'
@@ -21,14 +21,15 @@ export function Signal() {
   const [view, setView] = useState<View>('const')
 
   const e1 = SCENARIO.emitters[0]
-  const overlays: Overlay[] = [{ ...e1, alpha: 1, label: `E1 · ${override ?? 'QPSK'} · 2400 Bd`, tone: 'signal' }]
+  const T = SCENARIO.text
+  const overlays: Overlay[] = [{ ...e1, alpha: 1, label: `E1 · ${override ?? T.mod} · ${T.baud} Bd`, tone: 'signal' }]
 
   return (
     <Step
       n={2}
       title="Signal"
       lede={measured ? (
-        <>One strong signal at <b>+3.5 kHz</b>: <b>{override ?? 'QPSK'}</b> at <b>2 400</b> symbols per second, SNR 14 dB. Three weaker emitters share the band, <a href="#/scene">see them in Scene</a>.</>
+        <>One strong signal at <b>{T.at}</b>: <b>{override ?? T.mod}</b> at <b>{T.baudSpaced}</b> symbols per second, SNR {T.snr} dB.{T.others ? <> {T.others}, <a href="#/scene">see them in Scene</a>.</> : null}</>
       ) : running ? 'Measuring the recording: sample rate, bandwidth, symbol rate, then the modulation…' : 'Run Autopilot to measure the recording.'}
       actions={
         <>

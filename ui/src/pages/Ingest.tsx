@@ -4,9 +4,10 @@ import { Conf, MethodTag } from '../components/ui'
 import { Terrain } from '../components/Terrain'
 import { ingest, type Ingested } from '../lib/ingest'
 import { CONTENT_TEXT } from '../lib/triage'
-import { RECENT, SCENARIO, fmtBytes } from '../lib/mock'
+import { RECENT, SCENARIO, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
-import { runAutopilot, setState } from '../lib/store'
+import { runAutopilot, setPending, setState, useApp } from '../lib/store'
+import { engineDtype } from '../lib/engine'
 
 const ACCEPT = '.wav,.iq,.cfile,.bin,.raw,.dat,.cu8,.cs8,.cs16,.cf32,.sigmf-data,.sigmf-meta'
 
@@ -15,11 +16,17 @@ export function Ingest() {
   const [file, setFile] = useState<Ingested | null>(null)
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const dropped = useRef<File | null>(null)
+  const sidecar = useRef<string | null>(null)
 
   const take = async (list: FileList | null) => {
     if (!list?.length) return
     setBusy(true)
-    setFile(await ingest(Array.from(list)))
+    const files = Array.from(list)
+    dropped.current = files.find((f) => !f.name.endsWith('.sigmf-meta')) ?? null
+    const meta = files.find((f) => f.name.endsWith('.sigmf-meta'))
+    sidecar.current = meta ? await meta.text() : null
+    setFile(await ingest(files))
     setBusy(false)
   }
   const autopilot = () => { go('/signal'); runAutopilot() }
@@ -29,7 +36,7 @@ export function Ingest() {
       <div className="hero-bg" aria-hidden>
         <Terrain hero k={0} fail={false} floor={-104} span={44} />
         <div className="hero-fade" />
-        <div className="hero-cap mono">LIVE REPLAY · {SCENARIO.file.name} · 48 kHz · 251 s</div>
+        <div className="hero-cap mono">LIVE REPLAY · {SCENARIO.file.name} · {SCENARIO.text.heroCap}</div>
       </div>
       <div className="ingest-inner">
         <section className={'hero-left' + (file ? ' wide' : '')}>
@@ -49,12 +56,12 @@ export function Ingest() {
             <span className="small dimmer">Optional: drop a .sigmf-meta sidecar with it</span>
             <div className="row" style={{ marginTop: 18 }}>
               <button className="btn" onClick={() => input.current?.click()}>Choose file</button>
-              <button className="btn ghost" onClick={autopilot}>Try the demo capture</button>
+              <button className="btn ghost" onClick={() => { setPending(null); autopilot() }}>Try the demo capture</button>
             </div>
             <input ref={input} type="file" multiple accept={ACCEPT} hidden onChange={(e) => take(e.target.files)} />
           </div>
         ) : (
-          <Forensics f={file} onReset={() => setFile(null)} onRun={autopilot} />
+          <Forensics f={file} file={dropped.current} sidecar={sidecar.current} onReset={() => setFile(null)} onRun={autopilot} />
         )}
         </section>
 
@@ -82,7 +89,8 @@ export function Ingest() {
   )
 }
 
-function Forensics({ f, onReset, onRun }: { f: Ingested; onReset: () => void; onRun: () => void }) {
+function Forensics({ f, file, sidecar, onReset, onRun }: { f: Ingested; file: File | null; sidecar: string | null; onReset: () => void; onRun: () => void }) {
+  const engine = useApp((s) => s.engine)
   const [dtype, setDtype] = useState(f.guess.dtype)
   const [endian, setEndian] = useState(f.guess.endian)
   const [order, setOrder] = useState(f.guess.order)
@@ -118,7 +126,15 @@ function Forensics({ f, onReset, onRun }: { f: Ingested; onReset: () => void; on
             ))}
           </tbody>
         </table>
-        <form className="fx-override" onSubmit={(e) => { e.preventDefault(); if (fc) setState({ fcHz: parseFloat(fc) * 1e6 || null }); onRun() }}>
+        <form className="fx-override" onSubmit={(e) => {
+          e.preventDefault()
+          if (fc) setState({ fcHz: parseFloat(fc) * 1e6 || null })
+          // the engine reads headers and sidecars itself; the form's values go along only for headerless raw IQ
+          const raw = f.route === 'iq' && !sidecar
+          setPending(file, { fs: raw && fs ? parseFloat(fs) : null, dtype: raw ? engineDtype(dtype, endian) : null,
+            fc: fc ? parseFloat(fc) * 1e6 : null, sigmf: sidecar })
+          onRun()
+        }}>
           <div className="row between"><span className="label">Override</span><MethodTag m="manual" /></div>
           <p className="small dim">A wrong guess is never silent. Correct anything here and the chain re-runs from ingest.</p>
           {f.route === 'iq' && (
@@ -154,7 +170,7 @@ function Forensics({ f, onReset, onRun }: { f: Ingested; onReset: () => void; on
           </label>
           <button className="btn primary lg" type="submit">{f.content && f.content.label !== 'digital' ? 'Run Autopilot anyway' : 'Run Autopilot'}</button>
           <button className="btn ghost sm" type="button" onClick={onReset}>Choose another file</button>
-          <p className="small caution-note">Engine not connected: Autopilot runs on the demo capture, so you can walk the full flow.</p>
+          {engine === 'demo' && <p className="small caution-note">Engine not connected: Autopilot runs on the demo capture, so you can walk the full flow.</p>}
         </form>
       </div>
     </motion.div>
