@@ -245,8 +245,16 @@ B([
     "\u2192 Header &amp; Payload \u2192 Proof (+ Certificate); real in-browser WAV/SigMF parsing, raw-IQ dtype sniffing, "
     "triage, bit autocorrelation / entropy / CRC search. Engine\u2194UI verified end to end in Chrome: drop \u2192 blind "
     "decode \u2192 proof residual at noise floor \u2192 signed certificate.",
-    "<b>30 pytest tests</b> (layering rules, wrong-recipe, tampered-certificate, wrong-file cases) \u2014 plus a "
-    "nightly kill-matrix plan so <b>every fragile dependency has a proven fallback</b>.",
+    "<b>Real HF recordings, not just synthetic:</b> a one-click sample library in the UI (6 synthetic + 6 real "
+    "off-air recordings from the Signal Identification Wiki \u2014 STANAG 4285, MIL-188-110A, HFDL, PSK31, SITOR-B, "
+    "2G ALE); band-edge and symbol/tone-rate measurement rewritten this week to the standard \u221220 dB bandwidth "
+    "method \u2014 PSK31 rate now exact (31.25 Bd), SITOR-B rate exact with a clean 2-tone pair, ALE\u2019s 8-tone set "
+    "matches the MIL-STD-188-141 plan to within a few Hz.",
+    "<b>Honest on the recordings it can\u2019t yet decode:</b> when the blind search comes back undecided, the UI still "
+    "shows the real spectrogram and every measured parameter, plus the reason \u2014 never a guess dressed up as an "
+    "answer.",
+    "<b>42 pytest tests</b> (layering rules, wrong-recipe, tampered-certificate, wrong-file, real-file measurement "
+    "regression cases) \u2014 plus a nightly kill-matrix plan so <b>every fragile dependency has a proven fallback</b>.",
 ])
 callout("<b>Why this slide wins rooms:</b> most teams pitch what they will build. We show a blind decode + signed "
         "proof + independent verify working <b>today</b>, with honest limits stated (schema 0.1: QPSK-only engine, "
@@ -391,7 +399,7 @@ table([
     ["Role", "Owns (work packages)", "Proof-of-work already visible in the repo"],
     ["DSP", "WP02-03: measurement, receivers, bursts", "Feedforward timing estimator measured at 0.011 s per 10\u2076 samples"],
     ["Coding", "WP05-06: C++ kernels, blind coding ID", "GF(2) rank 2048\u00d71024 in 0.069 s; blind conv-ID K 3-9 works"],
-    ["Protocol", "WP07-08, WP13, WP17-20: Gen, Bit-Lens, orchestrator", "Generator with per-layer taps; 30-test CI; blind search 2-13 s"],
+    ["Protocol", "WP07-08, WP13, WP17-20: Gen, Bit-Lens, orchestrator", "Generator with per-layer taps; 42-test CI; blind search 2-13 s"],
     ["ML", "WP04, WP09-10: experts, proof, sufficiency", "Layered proof PASS measured (K1: 0.0003 vs 0.494 random \u2248 88\u03c3)"],
     ["Product", "WP12, WP15-16, WP21-22: UI, Tauri, installers", "React + three.js UI built and engine-wired; certificate PDF/JSON"],
     ["Data", "WP01, WP11, WP14, WP18-19: ingest, real data, acceptance", "SigMF/WAV/RAW ingest + dtype sniffing working in browser"],
