@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LUTS } from '../lib/colormap'
-import { SPEC, SCENARIO, binFreq, freqBin, spectrogram } from '../lib/mock'
+import { SPEC, SCENARIO, binFreq, freqBin, spectrogram } from '../lib/engine'
 import { axes, clamp, css, prep, sweep, useSize, type Box } from '../lib/plot'
 import { setState, useApp } from '../lib/store'
 

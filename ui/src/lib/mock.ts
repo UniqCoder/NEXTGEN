@@ -57,13 +57,43 @@ export const SCENARIO = {
   ],
   params: {} as Record<string, Param>,
   emitters: [
-    { id: 'E1', f0: 1880, f1: 5140, t0: 0.07, t1: 1, snr: 16.1, cls: 'QPSK · 2400 Bd', std: 'No named standard', state: 'decoded' },
-    { id: 'E2', f0: -14200, f1: -8800, t0: 0, t1: 1, snr: 12.0, cls: 'NOVEL', std: 'closest: none', state: 'novel' },
-    { id: 'E3', f0: -17620, f1: -17380, t0: 0, t1: 1, snr: 30.2, cls: 'CW · unmodulated', std: 'Carrier', state: 'measured' },
-    { id: 'E4', f0: 2640, f1: 3360, t0: 0.17, t1: 0.92, snr: 3.1, cls: '2-FSK · 50 Bd · 450 Hz', std: 'RTTY 50 Bd / 450 Hz', state: 'hidden' },
-  ],
+    { id: 'E1', f0: 1880, f1: 5140, t0: 0.07, t1: 1, snr: 16.1, cls: 'QPSK · 2400 Bd', std: 'No named standard', state: 'decoded', label: 'E1 · QPSK signal', sub: '2400 Bd · 16 dB SNR · decoded', fc: 3512 },
+    { id: 'E2', f0: -14200, f1: -8800, t0: 0, t1: 1, snr: 12.0, cls: 'NOVEL', std: 'closest: none', state: 'novel', label: 'E2 · short bursts', sub: 'unknown type', fc: -11500 },
+    { id: 'E3', f0: -17620, f1: -17380, t0: 0, t1: 1, snr: 30.2, cls: 'CW · unmodulated', std: 'Carrier', state: 'measured', label: 'E3 · steady carrier', sub: 'CW · 30 dB', fc: -17500 },
+    { id: 'E4', f0: 2640, f1: 3360, t0: 0.17, t1: 0.92, snr: 3.1, cls: '2-FSK · 50 Bd · 450 Hz', std: 'RTTY 50 Bd / 450 Hz', state: 'hidden', label: 'E4 · RTTY 50 / 450', sub: '', fc: 3000 },
+  ] as { id: string; f0: number; f1: number; t0: number; t1: number; snr: number; cls: string; std: string; state: string; label: string; sub: string; fc: number }[],
   proof: { explained: 99.1, ljungP: 0.41, kurt: 3.02, residFloor: -100.1, failExplained: 38.7 },
   cert: { id: 'SNJ-2026-0926-0042', key: 'ed25519:7Q4f…m2Xk', sig: '9f2c1e…a07b3d', issued: '2026-09-26 14:12:07 IST' },
+  // Scenario-bound display values (PRD §10.2): the demo's values here; the engine writes the job's values.
+  view: {
+    lo: -110, range: 60, floor: -104, span: 44, rowStart: 24, gridSeconds: 50, psdMin: -106, psdMax: -64, obwDb: -67,
+    verdict: null as 'pass' | 'fail' | null, source: 'demo',
+    layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
+  },
+  text: {
+    evm: 'EVM 6.1 % · MER 24.3 dB',
+    certFormat: 'Raw IQ · complex int16 · little-endian · I first (inferred)',
+    fecLine: 'Concatenated code: RS outer, block interleaver, convolutional inner · 41 symbol errors corrected · 0 failures',
+    scrText: '1 + x¹⁴ + x¹⁵ · seed 100101010000000', scrNote: 'Recovered blind with Berlekamp–Massey',
+    phaseText: '90° rotation · Gray mapping', phaseNote: 'All 4 rotations decoded; only 90° satisfies the code',
+    lfsr: { seed: '100101010000000', taps: [14, 15] },
+    rankAxis: 'NORM. RANK', rankNote: 'rank deficiency 42 % · block',
+    mod: 'QPSK', baud: '2400', baudSpaced: '2 400', at: '+3.5 kHz', snr: '14', others: 'Three weaker emitters share the band',
+    obw: 'OBW 3.24 kHz · −26 dB', format: 'complex int16 · 48 kHz', heroCap: '48 kHz · 251 s', sigmfDtype: 'ci16_le',
+    frameLine: '192-bit frames · sync 0xFAF320 · CRC-16/CCITT verified on 95 / 95 complete frames · payload high-entropy (not decrypted).',
+    codeKind: 'concatenated code', ilKind: 'block interleaver', decodeLine: '96 of 96 codewords decode', ilRows: 48, ilCols: 32,
+    ilLabel: 'Block 48 × 32',
+    chain: [
+      { role: 'Input', n: 'Demodulated bits', v: 'soft bits · 4 phase rotations tried', m: 'blind' },
+      { role: 'Error correction · inner', n: 'Viterbi', v: 'Conv. K=7 r½ (171,133)₈', m: 'blind' },
+      { role: 'De-interleaving', n: 'Block de-interleave', v: '48 × 32', m: 'blind' },
+      { role: 'Error correction · outer', n: 'Reed–Solomon', v: 'RS(255,223) GF(2⁸)', m: 'library' },
+      { role: 'Descrambling', n: 'Descramble', v: '1 + x¹⁴ + x¹⁵', m: 'blind' },
+      { role: 'Output', n: 'Clean bit stream', v: '192-bit frames', m: 'blind' },
+    ] as { n: string; v: string; m: Method; role: string }[],
+    genomeE1: { label: 'E1 · QPSK 2400 Bd', name: 'No named standard', note: 'closest MIL-STD-188-110A · 0.22 (it uses 8PSK)' },
+    genomeFs: { title: 'Sampling frequency · back-solved', value: '48 000', note: 'RTTY clock 49.99984 Bd ⇒ clock error −3.2 ppm' },
+  },
 }
 
 const P = (p: Param) => (SCENARIO.params[p.key] = p)
@@ -94,8 +124,8 @@ P({ key: 'fc', label: 'Centre frequency', value: 'Unknown', method: 'manual', co
 // ---------------- Spectrogram ----------------
 
 export const SPEC = { bins: 1024, rows: 360, fs: FS }
-export const binFreq = (b: number) => -FS / 2 + ((b + 0.5) * FS) / SPEC.bins
-export const freqBin = (f: number) => ((f + FS / 2) / FS) * SPEC.bins - 0.5
+export const binFreq = (b: number) => -SPEC.fs / 2 + ((b + 0.5) * SPEC.fs) / SPEC.bins
+export const freqBin = (f: number) => ((f + SPEC.fs / 2) / SPEC.fs) * SPEC.bins - 0.5
 
 export interface Spectrogram {
   full: Float32Array // dB, as recorded

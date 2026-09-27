@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
-import type { Method } from '../lib/mock'
+import type { Method } from '../lib/engine'
 import type { StageStatus } from '../lib/store'
 
 export function Panel(props: {

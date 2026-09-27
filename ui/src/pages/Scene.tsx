@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Panel } from '../components/ui'
 import { Waterfall, type Overlay } from '../components/Waterfall'
-import { SCENARIO, fmtHz } from '../lib/mock'
+import { SCENARIO, fmtHz } from '../lib/engine'
 import { go } from '../lib/router'
 import { setState, useApp } from '../lib/store'
 
@@ -27,6 +27,7 @@ export function Scene() {
   const restore = () => { setK(0); setState({ cancelled: [] }) }
 
   const em = SCENARIO.emitters
+  if (em.length < 4) return <DetectedOnly />
   const overlays: Overlay[] = [
     { ...em[0], label: 'E1 · QPSK 2400 Bd', alpha: 1 - k, tone: 'signal' },
     { ...em[1], label: taught ? 'E2 · LFM-CHIRP (taught)' : 'E2 · NOVEL', alpha: 1, tone: taught ? 'bone' : 'novel' },
@@ -149,6 +150,28 @@ function Teach({ onDone, onCancel }: { onDone: () => void; onCancel: () => void 
         <button className="btn sm primary" disabled={picked.length < 5 || !name.trim()} onClick={onDone}>Learn · {picked.length}/5</button>
         <button className="btn sm ghost" onClick={onCancel}>Cancel</button>
       </div>
+    </div>
+  )
+}
+
+/** Engine results: the emitters actually detected; multi-emitter detection (R-17) and cancellation (P2) come later. */
+function DetectedOnly() {
+  const em = SCENARIO.emitters
+  const overlays: Overlay[] = em.map((e) => ({ ...e, label: `${e.id} · ${e.cls}`, alpha: 1, tone: 'signal' as const }))
+  return (
+    <div className="scene">
+      <Panel title="Scene" alt="emitters in this recording" tools={<span className="label"><b>{em.length}</b> emitter{em.length === 1 ? '' : 's'}</span>}>
+        <Waterfall k={0} target="resid" floor={SCENARIO.view.floor} span={SCENARIO.view.span} overlays={overlays} />
+      </Panel>
+      <aside className="scene-list">
+        <div className="insp-h"><span className="label">Emitters</span><span className="label">from the engine</span></div>
+        {em.map((e) => (
+          <EmitterCard key={e.id} id={e.id} title={e.cls} sub={band(e.f0, e.f1)} snr={e.snr}
+            tags={<><span className="tag blind">Blind</span><span className="tag plain">{e.std}</span></>} state="decoded">
+            <p className="dim small">Wideband multi-emitter detection (R-17) and successive cancellation (P2) are not in this engine build yet.</p>
+          </EmitterCard>
+        ))}
+      </aside>
     </div>
   )
 }

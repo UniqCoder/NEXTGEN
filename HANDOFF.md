@@ -24,7 +24,7 @@
 - **ML (PRD §7):** propose and verify. E1 GBDT features + E2 small CNN (< 3 M parameters, ONNX) + E3 physics likelihood; calibration + conformal sets; triage GBDT. The coding layer is deliberately algebra, not ML.
 - **Stack (team decision v2.2):** Python + NumPy/SciPy, C++17 kernels via pybind11, FastAPI/uvicorn + Pydantic → OpenAPI → TS types, WebSockets, ONNX Runtime, keyring; Tauri 2 shell (**offline WebView2**, per-user install); GNU Radio only as an optional compiler pack. **No runtime network calls** (air-gap). Every fragile dependency has a fallback proven by a nightly kill-matrix (PRD §15).
 - **UI:** design frozen. Only a data-binding refactor is allowed (about 30 demo constants listed in PRD §10.2), gated by pixel-diff visual regression.
-- **Real data:** Meteor-M N2-3/N2-4 LRPT (**OQPSK** per SatDump docs and reception guides; 72k/80k; confirm from our first capture), HFDL, STANAG 4285 (PHY only), NAVTEX, multi-site KiwiSDR, SGP4 Doppler; cabled rig Pluto → attenuators → RTL-SDR V4.
+- **Real data (software only, no hardware — user decision 27 Sep):** no rig, no own captures. Tier 2 = SANJAYA-Gen with measured-style channel/front-end models; Tier 3 = public recordings fetched as files (KiwiSDR public receivers, SatNOGS / SatDump sample recordings incl. Meteor-M LRPT, sigidwiki samples), truth from independent decoders (SatDump, dumphfdl, fldigi).
 - **Programme:** 10 weeks from W1 = 28 Sep 2026; gates G0 (4 Oct, engineering baseline) → G1 (11 Oct) → G2 (25 Oct) → G3 (8 Nov) → G4 (22 Nov) → G5 (29 Nov). **Threshold configuration 31.65 pw committed at 73 % schedule confidence; baseline 34.35 pw is a goal (31 %)**; P2 unfunded. Cut ladder in PRD §11.6.
 - **Not doing:** payload decryption, LLM chat, cloud/auth, black-box-only DL, speech content, OFDM (unless the SPOC asks).
 
@@ -40,11 +40,16 @@
 - **Schema 0.1 limits (explicit errors, not silent):** QPSK only; integer samples/symbol; SigMF cf32/ci16 + raw IQ with `--fs --dtype`; known-recipe mode only (`attempts_k = 1`, `false_pass_bound = null` until the G5 campaign); proof thresholds are `v0-defaults` until the G2 calibration.
 - **C++ kernels blocked on toolchain:** this machine has only 32-bit MinGW GCC 6.3 (cannot build 64-bit Python extensions). Install MSVC Build Tools or mingw-w64 (x86_64) for WP05; the NumPy path is the PRD's mandated fallback and is what runs now.
 
+## G2 progress (commit c864d79)
+- **Blind search works** (`analyze FILE` with no recipe, `sanjaya/search.py`): symbol rate, roll-off, CFO, clock ppm, frame + sync marker, block-interleaver geometry, rate-1/2 conv code (K 3-9), additive frame-synchronous scrambler (library + exhaustive degree ≤ 8), phase ambiguity, termination, counter / constant fields / CRC (poly by GF(2) gcd, init by inverse). 2-13 s per file. Noise-only → UNDECIDED (exit 2).
+- Ambiguity handling that mattered (keep): sync-marker extent decided by block-edge parity checks; I/Q-swap code twins carried as hypotheses; transparent-code complement twins broken by structure (counter direction, termination).
+- 30 tests (`scripts/check.py`, ~80 s).
+
 ## Next actions
 1. **Remaining G1 items:** C++ Viterbi within 0.2 dB of oracle (needs toolchain above); Gen v1 taps (clock drift, more mods); FastAPI + UI adapter + visual-regression baseline; Tauri sidecar freeze spike; E1 + E3 v0; sealed-set seed hashes.
 2. **G2 path (critical):** blind conv-code + block/conv interleaver ID (GF(2) rank from `_build/feasibility.py`), orchestrator v1, proof calibration on Tiers 1-2, QAM/OQPSK.
-3. Record real data early: Meteor passes (confirm OQPSK and 72k/80k), KiwiSDR (HFDL, STANAG 4285, NAVTEX; multi-site).
-4. Confirm with the SPOC: SIH finale date and format (reported: 36-hour finale in December), rules on pre-built code; get institute approval for the cabled rig.
+3. Collect public recordings (no hardware): Meteor-M LRPT baseband samples (confirm OQPSK, 72k/80k), KiwiSDR HFDL / STANAG 4285 / NAVTEX (multi-site).
+4. Confirm with the SPOC: SIH finale date and format (reported: 36-hour finale in December), rules on pre-built code; (no rig: software only).
 5. Pending from earlier: the user asked for a standalone version of the 3D terrain model (`ui/src/components/Terrain.tsx`). It was interrupted; ask before resuming.
 
 ## Working preferences

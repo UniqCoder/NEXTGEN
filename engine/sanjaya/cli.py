@@ -74,6 +74,21 @@ def _verify(a):
     print(f"REPRODUCED: verdict {cert['body']['verdict'].upper()}, every layer statistic within declared precision")
 
 
+def _serve(a):
+    import secrets, webbrowser
+    import uvicorn
+    from .api import create_app
+    token = a.token or secrets.token_urlsafe(18)
+    ui = Path(a.ui) if a.ui else Path(__file__).resolve().parents[2] / "ui" / "dist"
+    app = create_app(token, a.port, Path(a.work), ui, dev=a.dev)
+    url = f"http://127.0.0.1:{a.port}/?token={token}"
+    print(f"SANJAYA engine on 127.0.0.1:{a.port} (UI: {ui if ui.is_dir() else 'not built'})")
+    print(f"  open {url}")
+    if a.open:
+        webbrowser.open(url)
+    uvicorn.run(app, host="127.0.0.1", port=a.port, log_level="warning")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sanjaya")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -94,6 +109,14 @@ def main(argv=None):
         s.add_argument("--dtype")
         s.set_defaults(fn=fn)
     g.set_defaults(fn=_gen)
+    v = sub.add_parser("serve", help="local engine API (+ the UI in browser mode) on 127.0.0.1")
+    v.add_argument("--port", type=int, default=8765)
+    v.add_argument("--work", default="work/jobs")
+    v.add_argument("--ui")
+    v.add_argument("--token", help="fixed token (default: random per launch)")
+    v.add_argument("--dev", action="store_true", help="also allow the Vite dev origin http://localhost:5173")
+    v.add_argument("--open", action="store_true")
+    v.set_defaults(fn=_serve)
     a = p.parse_args(argv)
     a.fn(a)
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type DependencyList } from 'react'
-import { SCENARIO, SPEC, autocorr, bitstream, gauss, prng, rankProfile, spectrogram } from '../lib/mock'
+import { FRAME, SCENARIO, SPEC, autocorr, bitstream, constellation, gauss, prng, rankProfile, spectrogram } from '../lib/engine'
 import { axes, clamp, css, prep, useSize, type Box } from '../lib/plot'
 import { LUTS } from '../lib/colormap'
 import { useApp } from '../lib/store'
@@ -52,7 +52,7 @@ const Frame = ({ r, children }: { r: { wrap: React.RefObject<HTMLDivElement | nu
 
 // ---------------- PSD: persistence spectrum ----------------
 
-const PSD_MIN = -106, PSD_MAX = -64, PSD_LEVELS = 150
+const PSD_LEVELS = 150
 
 export function PSD() {
   const sel = useApp((s) => s.sel)
@@ -61,13 +61,14 @@ export function PSD() {
   // How often each (frequency, level) cell was hit across all rows: the "digital phosphor" density.
   const data = useMemo(() => {
     const s = spectrogram()
+    const { psdMin: PSD_MIN, psdMax: PSD_MAX } = SCENARIO.view
     const hits = new Uint16Array(PSD_LEVELS * SPEC.bins)
     const lin = new Float64Array(SPEC.bins)
     let top = 1
     for (let y = 0; y < SPEC.rows; y++)
       for (let b = 0; b < SPEC.bins; b++) {
         const db = s.full[y * SPEC.bins + b]
-        if (y >= 24) lin[b] += 10 ** (db / 10) / (SPEC.rows - 24)
+        if (y >= SCENARIO.view.rowStart) lin[b] += 10 ** (db / 10) / (SPEC.rows - SCENARIO.view.rowStart)
         const lv = Math.floor(((db - PSD_MIN) / (PSD_MAX - PSD_MIN)) * PSD_LEVELS)
         if (lv < 0 || lv >= PSD_LEVELS) continue
         const i = (PSD_LEVELS - 1 - lv) * SPEC.bins + b
@@ -96,10 +97,11 @@ export function PSD() {
 
   const r = useDraw((ctx, w, h) => {
     const b: Box = { x: 40, y: 10, w: w - 52, h: h - 36 }
-    axes(ctx, b, { min: -24, max: 24, fmt: (v) => (v > 0 ? '+' : '') + v, count: 8, title: 'kHz' }, { min: PSD_MIN, max: PSD_MAX, fmt: (v) => String(v), count: 4, title: 'dB' })
+    const { psdMin: PSD_MIN, psdMax: PSD_MAX } = SCENARIO.view
+    axes(ctx, b, { min: -SPEC.fs / 2000, max: SPEC.fs / 2000, fmt: (v) => (v > 0 ? '+' : '') + v, count: 8, title: 'kHz' }, { min: PSD_MIN, max: PSD_MAX, fmt: (v) => String(v), count: 4, title: 'dB' })
     const X = (bin: number) => b.x + ((bin + 0.5) / SPEC.bins) * b.w
     const Y = (db: number) => b.y + b.h - clamp((db - PSD_MIN) / (PSD_MAX - PSD_MIN)) * b.h
-    const fx = (f: number) => b.x + ((f + 24000) / 48000) * b.w
+    const fx = (f: number) => b.x + ((f + SPEC.fs / 2) / SPEC.fs) * b.w
     if (sel) {
       ctx.fillStyle = 'rgba(255,138,31,0.08)'
       ctx.fillRect(fx(Math.min(sel.f0, sel.f1)), b.y, Math.abs(fx(sel.f1) - fx(sel.f0)), b.h)
@@ -113,13 +115,14 @@ export function PSD() {
     ctx.beginPath(); data.avg.forEach((v, i) => (i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))))
     ctx.strokeStyle = css('--bone-1'); ctx.globalAlpha = 0.85; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1
     // occupied-bandwidth dimension line for E1
-    const e = SCENARIO.emitters[0], x0 = fx(e.f0), x1 = fx(e.f1), yy = Y(-67)
+    const e = SCENARIO.emitters[0], x0 = fx(e.f0), x1 = fx(e.f1), yy = Y(SCENARIO.view.obwDb)
     ctx.strokeStyle = css('--bone-2'); ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(x0, yy - 4); ctx.lineTo(x0, yy + 4); ctx.moveTo(x1, yy - 4); ctx.lineTo(x1, yy + 4); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke()
     ctx.fillStyle = css('--bone-1'); ctx.font = '8.5px "Martian Mono"'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
-    ctx.fillText('OBW 3.24 kHz · −26 dB', x1 + 6, yy)
+    ctx.fillText(SCENARIO.text.obw, x1 + 6, yy)
     ctx.fillStyle = css('--bone-2'); ctx.textAlign = 'left'
-    ctx.fillText('E3 CW', fx(-17500) + 6, Y(-68))
+    const e3 = SCENARIO.emitters.find((m) => m.id === 'E3')
+    if (e3) ctx.fillText('E3 CW', fx(e3.fc) + 6, Y(SCENARIO.view.obwDb - 1))
   }, [sel, img])
   return (
     <Frame r={r} />
@@ -170,12 +173,14 @@ export function Constellation({ locked, ref8 }: { locked: boolean; ref8: boolean
     const dot = spriteFor(paper ? css('--signal') : 'rgba(255,138,31,0.55)')
     const rnd = prng(Math.floor(t * 60))
     const n = 260
+    const meas = constellation()                                   // engine: measured symbols; demo: synthetic
     a.globalAlpha = paper ? 0.25 : 0.34
     for (let j = 0; j < n; j++) {
-      const [i0, q0] = QPSK[Math.floor(rnd() * 4)]
+      const k = meas ? Math.floor(rnd() * (meas.length / 2)) : 0
+      const [i0, q0] = meas ? [meas[2 * k], meas[2 * k + 1]] : QPSK[Math.floor(rnd() * 4)]
       const idx = t * 900 + j * 3.4
       const ph = (1 - L) * (idx * 0.011 + Math.sin(idx * 0.002) * 2 + 0.4)
-      const sd = 0.065 + (1 - L) * 0.1
+      const sd = meas ? (1 - L) * 0.1 : 0.065 + (1 - L) * 0.1
       const i1 = i0 * Math.cos(ph) - q0 * Math.sin(ph) + gauss(rnd) * sd
       const q1 = i0 * Math.sin(ph) + q0 * Math.cos(ph) + gauss(rnd) * sd
       const [x, y] = P(i1, q1)
@@ -208,7 +213,7 @@ export function Constellation({ locked, ref8 }: { locked: boolean; ref8: boolean
   }, [locked, ref8])
   return (
     <Frame r={r}>
-      <div className="ax-title" style={{ left: 12, bottom: 8 }}>{locked ? 'EVM 6.1 % · MER 24.3 dB · CARRIER LOCKED' : 'ACQUIRING · CARRIER SPINNING'}</div>
+      <div className="ax-title" style={{ left: 12, bottom: 8 }}>{locked ? `${SCENARIO.text.evm} · CARRIER LOCKED` : 'ACQUIRING · CARRIER SPINNING'}</div>
     </Frame>
   )
 }
@@ -289,10 +294,11 @@ export function RankProfile() {
   const data = useMemo(rankProfile, [])
   const r = useAnim((ctx, w, h, t) => {
     const b: Box = { x: 44, y: 16, w: w - 60, h: h - 44 }
-    axes(ctx, b, { min: 8, max: 128, fmt: (v) => String(v), count: 12, title: 'CANDIDATE PERIOD · bits' }, { min: 0.5, max: 1, fmt: (v) => v.toFixed(1), count: 5, title: 'NORM. RANK' })
+    const vmin = Math.min(0.5, Math.floor(Math.min(...data.map((d) => d.v)) * 10) / 10)
+    axes(ctx, b, { min: 8, max: 128, fmt: (v) => String(v), count: 12, title: 'CANDIDATE PERIOD · bits' }, { min: vmin, max: 1, fmt: (v) => v.toFixed(1), count: 5, title: SCENARIO.text.rankAxis })
     const prog = clamp(t / 1.2)
     const X = (p: number) => b.x + ((p - 8) / 120) * b.w
-    const Y = (v: number) => b.y + b.h - ((v - 0.5) / 0.5) * b.h
+    const Y = (v: number) => b.y + b.h - ((v - vmin) / (1 - vmin)) * b.h
     // baseline at full rank; each candidate period hangs down by its rank deficiency
     ctx.strokeStyle = css('--line-3'); ctx.setLineDash([2, 3])
     ctx.beginPath(); ctx.moveTo(b.x, Y(1) + 0.5); ctx.lineTo(b.x + b.w, Y(1) + 0.5); ctx.stroke(); ctx.setLineDash([])
@@ -309,14 +315,15 @@ export function RankProfile() {
       }
       ctx.beginPath(); ctx.arc(X(d.p), Y(d.v), dip ? 3.5 : 1.3, 0, Math.PI * 2); ctx.fill()
     }
-    if (prog > 0.35) {
-      const x = X(48), y = Y(0.58)
+    const best = data.reduce((m, d) => (d.v < m.v ? d : m), data[0])
+    if (prog > 0.35 && best && best.v < 0.8) {
+      const x = X(best.p), y = Y(best.v)
       ctx.strokeStyle = css('--signal'); ctx.lineWidth = 1
       ctx.beginPath(); ctx.moveTo(x + 4, y + 2); ctx.lineTo(x + 30, y + 26); ctx.lineTo(x + 180, y + 26); ctx.stroke()
       ctx.fillStyle = css('--signal'); ctx.font = '500 9.5px "Martian Mono"'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
-      ctx.fillText('PERIOD = 48', x + 34, y + 23)
+      ctx.fillText(`PERIOD = ${best.p}`, x + 34, y + 23)
       ctx.fillStyle = css('--bone-2'); ctx.font = '8.5px "Martian Mono"'; ctx.textBaseline = 'top'
-      ctx.fillText('rank deficiency 42 % · block', x + 34, y + 30)
+      ctx.fillText(SCENARIO.text.rankNote, x + 34, y + 30)
     }
   }, [])
   return <Frame r={r} />
@@ -325,17 +332,18 @@ export function RankProfile() {
 // ---------------- Bit-stream autocorrelation ----------------
 
 export function Autocorr() {
-  const ac = useMemo(() => autocorr(bitstream().stream, 640), [])
+  const L = Math.max(640, Math.ceil((FRAME.len * 10) / 3 / 10) * 10)       // three frame periods fit (demo: 640)
+  const ac = useMemo(() => autocorr(bitstream().stream, L), [L])
   const r = useDraw((ctx, w, h) => {
     const b: Box = { x: 40, y: 12, w: w - 52, h: h - 38 }
-    axes(ctx, b, { min: 0, max: 640, fmt: (v) => String(v), count: 8, title: 'LAG · bits' }, { min: -0.1, max: 0.6, fmt: (v) => v.toFixed(1), count: 4, title: 'R' })
-    const X = (l: number) => b.x + (l / 640) * b.w
+    axes(ctx, b, { min: 0, max: L, fmt: (v) => String(v), count: 8, title: 'LAG · bits' }, { min: -0.1, max: 0.6, fmt: (v) => v.toFixed(1), count: 4, title: 'R' })
+    const X = (l: number) => b.x + (l / L) * b.w
     const Y = (v: number) => b.y + b.h - ((v + 0.1) / 0.7) * b.h
     ctx.strokeStyle = css('--bone-2'); ctx.lineWidth = 1; ctx.beginPath()
-    for (let l = 1; l <= 640; l++) (l === 1 ? ctx.moveTo(X(l), Y(ac[l])) : ctx.lineTo(X(l), Y(ac[l])))
+    for (let l = 1; l <= L; l++) (l === 1 ? ctx.moveTo(X(l), Y(ac[l])) : ctx.lineTo(X(l), Y(ac[l])))
     ctx.stroke()
     ctx.fillStyle = css('--signal'); ctx.strokeStyle = css('--signal'); ctx.font = '8.5px "Martian Mono"'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
-    for (const l of [192, 384, 576]) {
+    for (let l = FRAME.len; l <= L; l += FRAME.len) {
       const x = X(l), y = Y(ac[l])
       ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.stroke()
       ctx.fillText(String(l), x, y - 5)

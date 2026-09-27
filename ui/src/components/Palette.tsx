@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FRAME, SCENARIO, bitstream, findSync } from '../lib/mock'
+import { FRAME, SCENARIO, SPEC, bitstream, findSync } from '../lib/engine'
 import { motion } from 'motion/react'
 import { go } from '../lib/router'
 import { STEPS, getState, prove, runAutopilot, setState } from '../lib/store'
@@ -86,11 +86,11 @@ export function exportJSON(kind: 'report' | 'sigmf' = 'report') {
   const params = Object.fromEntries(Object.values(SCENARIO.params).map((p) => [p.key, { value: p.value, unit: p.unit ?? null, method: p.method, confidence: p.conf, evidence: p.evidence }]))
   if (kind === 'sigmf') {
     const meta = {
-      global: { 'core:datatype': 'ci16_le', 'core:sample_rate': 48000, 'core:version': '1.0.0', 'core:description': 'SANJAYA analysis', 'core:sha512': null },
+      global: { 'core:datatype': SCENARIO.text.sigmfDtype, 'core:sample_rate': SPEC.fs, 'core:version': '1.0.0', 'core:description': 'SANJAYA analysis', 'core:sha512': null },
       captures: [{ 'core:sample_start': 0, ...(s.fcHz ? { 'core:frequency': s.fcHz } : {}) }],
       annotations: SCENARIO.emitters.map((e) => ({
-        'core:sample_start': Math.round(e.t0 * SCENARIO.file.duration * 48000),
-        'core:sample_count': Math.round((e.t1 - e.t0) * SCENARIO.file.duration * 48000),
+        'core:sample_start': Math.round(e.t0 * SCENARIO.file.duration * SPEC.fs),
+        'core:sample_count': Math.round((e.t1 - e.t0) * SCENARIO.file.duration * SPEC.fs),
         'core:freq_lower_edge': e.f0 + (s.fcHz ?? 0), 'core:freq_upper_edge': e.f1 + (s.fcHz ?? 0),
         'core:label': e.id, 'core:comment': `${e.cls} · ${e.std}`,
       })),
