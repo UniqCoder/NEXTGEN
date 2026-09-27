@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { ENGINE, SCENARIO, runJob } from './engine'
+import { ENGINE, SCENARIO, listSamples, runJob, runSample, type SampleMeta } from './engine'
 
 export type StageStatus = 'pending' | 'running' | 'done' | 'failed' | 'override'
 export type ProofState = 'idle' | 'running' | 'pass' | 'fail'
@@ -26,6 +26,7 @@ export interface AppState {
   job: 'idle' | 'running' | 'done' | 'undecided' | 'error'
   jobNote: string | null // the engine's reason when it is undecided or failed
   dataVersion: number // bumps when engine results replace the demo data; pages remount on it
+  samples: SampleMeta[] // the built-in demo library (engine/samples), fetched once an engine is reachable
 }
 
 const READY: StageStatus[] = ['done', 'done', 'done', 'done', 'done', 'done', 'pending', 'pending']
@@ -52,6 +53,7 @@ let state: AppState = {
   job: 'idle',
   jobNote: null,
   dataVersion: 0,
+  samples: [],
 }
 
 const listeners = new Set<() => void>()
@@ -89,17 +91,22 @@ export function setPending(file: File | null, opts: JobOpts = {}) {
   pending = file ? { file, opts } : null
 }
 
-async function runEngine(p: NonNullable<typeof pending>) {
+async function settle(run: () => Promise<Awaited<ReturnType<typeof runJob>>>) {
   clear()
   setState({ stages: Array(8).fill('pending'), proof: 'idle', proofT: 0, loopBack: false, cancelled: [], job: 'running', jobNote: null })
   try {
-    const st = await runJob(p.file, p.opts, (s) => setState({ stages: s.stages.map((x) => x) as StageStatus[] }))
-    if (st.state === 'done')
-      setState((s) => ({ job: 'done', dataVersion: s.dataVersion + 1, floor: SCENARIO.view.floor, span: SCENARIO.view.span, modOverride: null }))
-    else setState({ job: st.state === 'undecided' ? 'undecided' : 'error', jobNote: st.error })
+    const st = await run()
+    if (st.state === 'done' || st.state === 'undecided')
+      setState((s) => ({ job: st.state as 'done' | 'undecided', jobNote: st.error, dataVersion: s.dataVersion + 1,
+        floor: SCENARIO.view.floor ?? s.floor, span: SCENARIO.view.span ?? s.span, modOverride: null }))
+    else setState({ job: 'error', jobNote: st.error })
   } catch (e) {
     setState({ job: 'error', jobNote: String(e) })
   }
+}
+
+async function runEngine(p: NonNullable<typeof pending>) {
+  await settle(() => runJob(p.file, p.opts, (s) => setState({ stages: s.stages.map((x) => x) as StageStatus[] })))
 }
 
 export function runAutopilot() {
@@ -111,6 +118,16 @@ export function runAutopilot() {
     later(i * step, () => setStage(i, 'running'))
     later((i + 1) * step - 60, () => setStage(i, 'done'))
   }
+}
+
+/** Run one of the built-in demo recordings (from Ingest's "Recent recordings" list). */
+export function runSampleJob(sample: SampleMeta) {
+  void settle(() => runSample(sample, (s) => setState({ stages: s.stages.map((x) => x) as StageStatus[] })))
+}
+
+export async function loadSampleLibrary() {
+  const samples = await listSamples()
+  if (samples.length) setState({ samples })
 }
 
 /** PROVE: re-synthesise, subtract, test residual whiteness. */

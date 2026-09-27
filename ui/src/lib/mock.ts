@@ -67,7 +67,9 @@ export const SCENARIO = {
   // Scenario-bound display values (PRD §10.2): the demo's values here; the engine writes the job's values.
   view: {
     lo: -110, range: 60, floor: -104, span: 44, rowStart: 24, gridSeconds: 50, psdMin: -106, psdMax: -64, obwDb: -67,
-    verdict: null as 'pass' | 'fail' | null, source: 'demo',
+    verdict: null as 'pass' | 'fail' | 'undecided' | null, source: 'demo',
+    reason: null as string | null,
+    measured: null as { band_lo_hz: number; band_hi_hz: number; centre_hz: number; snr_db: number; floor_db: number; rate_hz: number | null; tones_hz: number[] } | null,
     layers: [] as { layer: string; verdict: string; reason: string | null }[], equivalences: [] as string[],
   },
   text: {

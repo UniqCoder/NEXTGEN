@@ -10,6 +10,14 @@ import { useApp } from '../lib/store'
 const KIND_VAR: Record<string, string> = { const: '--signal', counter: '--signal-2', random: '--bone-3', crc: '--bone-1' }
 
 export function Frames() {
+  const undecided = useApp((s) => s.job === 'undecided')
+  if (undecided) return <Step n={4} title="Header & payload" lede={null} back={{ to: '/decoding', label: 'Decoding' }} next={{ to: '/proof', label: 'Continue to proof', disabled: true }}>{null}</Step>
+  return <FramesReady />
+}
+
+/** Assumes a recipe was found (FRAME.len > 0, a real bitstream): kept separate so Frames() can bail
+ * out above before any of these hooks run (build_partial has no frame/bits to work with). */
+function FramesReady() {
   const autopilot = useApp((s) => s.mode === 'autopilot')
   const doneStage = useApp((s) => s.stages[5] === 'done')
   const { stream } = useMemo(bitstream, [])

@@ -103,7 +103,6 @@ export default function App() {
           : <span><i className={'led ' + (job === 'error' || job === 'undecided' ? 'amber' : 'green')} /> Engine connected · {
               job === 'running' ? 'analysing…' : job === 'undecided' ? 'undecided: ' + jobNote : job === 'error' ? 'error: ' + jobNote
               : SCENARIO.view.source === 'demo' ? 'demo data' : 'results from this recording'}</span>}
-        <span>Offline</span>
         <span>{SCENARIO.file.name} · {SCENARIO.text.format}</span>
         <span className="grow" />
         <span>Ctrl K for every command</span>

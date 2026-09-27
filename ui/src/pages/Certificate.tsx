@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import { Mark } from '../components/ui'
+import { Undecided } from '../components/Step'
 import { exportJSON } from '../components/Palette'
 import { FRAME, SCENARIO, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
@@ -13,6 +14,9 @@ const line = {
 export function Certificate() {
   const proof = useApp((s) => s.proof)
   const fcHz = useApp((s) => s.fcHz)
+  const job = useApp((s) => s.job)
+  const jobNote = useApp((s) => s.jobNote)
+  if (job === 'undecided') return <Undecided reason={jobNote} />
   if (proof !== 'pass')
     return (
       <div className="empty">

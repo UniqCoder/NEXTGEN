@@ -1,12 +1,12 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { Conf, MethodTag } from '../components/ui'
 import { Terrain } from '../components/Terrain'
 import { ingest, type Ingested } from '../lib/ingest'
 import { CONTENT_TEXT } from '../lib/triage'
-import { RECENT, SCENARIO, fmtBytes } from '../lib/engine'
+import { ENGINE, RECENT, SCENARIO, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
-import { runAutopilot, setPending, setState, useApp } from '../lib/store'
+import { loadSampleLibrary, runAutopilot, runSampleJob, setPending, setState, useApp } from '../lib/store'
 import { engineDtype } from '../lib/engine'
 
 const ACCEPT = '.wav,.iq,.cfile,.bin,.raw,.dat,.cu8,.cs8,.cs16,.cf32,.sigmf-data,.sigmf-meta'
@@ -18,6 +18,14 @@ export function Ingest() {
   const input = useRef<HTMLInputElement>(null)
   const dropped = useRef<File | null>(null)
   const sidecar = useRef<string | null>(null)
+  const samples = useApp((s) => s.samples)
+  useEffect(() => { if (ENGINE.available) void loadSampleLibrary() }, [])
+  const runSample = (id: string) => {
+    const s = samples.find((s) => s.id === id)
+    if (!s) return
+    go('/signal')
+    runSampleJob(s)
+  }
 
   const take = async (list: FileList | null) => {
     if (!list?.length) return
@@ -42,7 +50,7 @@ export function Ingest() {
         <section className={'hero-left' + (file ? ' wide' : '')}>
         <span className="step-k">Step 1 of 5 · Recording</span>
         <h1 className="ingest-h">Drop a recording.</h1>
-        <p className="dim ingest-sub">.wav or raw .IQ, from any sensor. SANJAYA works out the rest, and nothing leaves this machine.</p>
+        <p className="dim ingest-sub">.wav or raw .IQ, from any sensor. SANJAYA recovers the transmitter recipe and proves it, not just a label.</p>
 
         {!file ? (
           <div
@@ -66,23 +74,40 @@ export function Ingest() {
         </section>
 
         <div className="recent">
-          <h2 className="sub-h">Recent recordings</h2>
-          <table className="table">
-            <tbody>
-              {RECENT.map((r) => (
-                <tr key={r.name} className={r.name === SCENARIO.file.name ? 'hover' : ''} tabIndex={r.name === SCENARIO.file.name ? 0 : undefined} onClick={() => r.name === SCENARIO.file.name && go('/signal')}>
-                  <td className="mono">{r.name}</td>
-                  <td className="mono small dim">{fmtBytes(r.size)}</td>
-                  <td className="mono small dim">{r.fmt}</td>
-                  <td className="small dim">{r.note}</td>
-                  <td className="mono small dimmer">{r.when}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span className={'tag ' + (r.verdict === 'proven' ? 'proven' : r.verdict === 'novel' ? 'novel' : 'plain')}>{r.verdict}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h2 className="sub-h">{samples.length ? 'Sample library' : 'Recent recordings'}</h2>
+          {samples.length ? (
+            <table className="table">
+              <tbody>
+                {samples.map((s) => (
+                  <tr key={s.id} className="hover" tabIndex={0} onClick={() => runSample(s.id)}>
+                    <td className="mono">{s.name}</td>
+                    <td className="small dim">{s.what}</td>
+                    <td className="mono small dimmer">{s.duration_s ? `${s.duration_s.toFixed(1)} s` : ''}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className={'tag ' + (s.kind === 'synthetic' ? 'plain' : 'proven')}>{s.kind}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="table">
+              <tbody>
+                {RECENT.map((r) => (
+                  <tr key={r.name} className={r.name === SCENARIO.file.name ? 'hover' : ''} tabIndex={r.name === SCENARIO.file.name ? 0 : undefined} onClick={() => r.name === SCENARIO.file.name && go('/signal')}>
+                    <td className="mono">{r.name}</td>
+                    <td className="mono small dim">{fmtBytes(r.size)}</td>
+                    <td className="mono small dim">{r.fmt}</td>
+                    <td className="small dim">{r.note}</td>
+                    <td className="mono small dimmer">{r.when}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className={'tag ' + (r.verdict === 'proven' ? 'proven' : r.verdict === 'novel' ? 'novel' : 'plain')}>{r.verdict}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

@@ -1,8 +1,33 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { SCENARIO } from '../lib/engine'
 import { go, useRoute } from '../lib/router'
 import { STEPS, setState, stepStatus, useApp } from '../lib/store'
 import { Knob, Seg } from './ui'
+
+/** Shown instead of a step's normal content once the blind search comes back undecided: no recipe
+ * survived, so there is nothing to de-interleave, decode or prove — only what was measured. */
+export function Undecided({ reason }: { reason: string | null }) {
+  const m = SCENARIO.view.measured
+  return (
+    <div className="empty">
+      <span className="label">Undecided</span>
+      <h2>No recipe survived the search.</h2>
+      <p className="dim">{reason ?? 'The blind search ran out of hypotheses before one passed the layered proof.'}</p>
+      {m && (
+        <table className="table" style={{ marginTop: 14, maxWidth: 420 }}>
+          <tbody>
+            <tr><td className="label">Occupied band</td><td className="mono">{Math.round(m.band_lo_hz)} – {Math.round(m.band_hi_hz)} Hz</td></tr>
+            <tr><td className="label">In-band SNR</td><td className="mono">{m.snr_db.toFixed(1)} dB</td></tr>
+            {m.rate_hz && <tr><td className="label">Candidate rate</td><td className="mono">{m.rate_hz.toFixed(2)} Bd</td></tr>}
+            {m.tones_hz.length > 0 && <tr><td className="label">Candidate tones</td><td className="mono">{m.tones_hz.map((t) => Math.round(t)).join(', ')} Hz</td></tr>}
+          </tbody>
+        </table>
+      )}
+      <p className="small dimmer" style={{ marginTop: 14 }}>See the real spectrum and these measurements on the <a href="#/signal">Signal</a> step.</p>
+    </div>
+  )
+}
 
 /** One step of the flow: what is happening, the evidence, and the way forward. */
 export function Step(props: {
@@ -15,17 +40,20 @@ export function Step(props: {
   next?: { to?: string; label: string; disabled?: boolean; onClick?: () => void }
   extra?: ReactNode
 }) {
+  const job = useApp((s) => s.job)
+  const jobNote = useApp((s) => s.jobNote)
+  const undecided = props.n >= 3 && job === 'undecided'
   return (
     <div className="step">
       <header className="step-head">
         <div className="step-intro">
           <span className="step-k">Step {props.n} of {STEPS.length}</span>
           <h1>{props.title}</h1>
-          <p className="lede">{props.lede}</p>
+          <p className="lede">{undecided ? 'The blind search could not certify a recipe on this recording.' : props.lede}</p>
         </div>
         {props.actions && <div className="step-actions">{props.actions}</div>}
       </header>
-      <div className="step-body">{props.children}</div>
+      <div className="step-body">{undecided ? <Undecided reason={jobNote} /> : props.children}</div>
       <footer className="step-foot">
         {props.back ? (
           <button className="btn ghost" onClick={() => go(props.back!.to)}>← {props.back.label}</button>

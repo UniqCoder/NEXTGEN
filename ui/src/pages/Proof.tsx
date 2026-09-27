@@ -12,6 +12,14 @@ import { prove, setState, skipProof, useApp } from '../lib/store'
 const HOW = ['Re-encode the decoded bits', 'Re-modulate with the measured parameters', 'Subtract from the recording', 'Test whether what is left is white noise']
 
 export function Proof() {
+  const undecided = useApp((s) => s.job === 'undecided')
+  if (undecided) return <Step n={5} title="Proof" lede={null} back={{ to: '/frames', label: 'Header & payload' }}>{null}</Step>
+  return <ProofReady />
+}
+
+/** Assumes a recipe was found (SCENARIO.params.modulation etc. exist): kept separate so Proof() can
+ * bail out above before any of these hooks run (build_partial has no decoded params to re-synthesise). */
+function ProofReady() {
   const proof = useApp((s) => s.proof)
   const k = useApp((s) => s.proofT)
   const override = useApp((s) => s.modOverride)

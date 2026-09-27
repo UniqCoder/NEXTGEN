@@ -16,7 +16,9 @@ export function Params({ keys }: { keys: string[] }) {
     <div className="params">
       {keys.map((key) => {
         const p = SCENARIO.params[key]
-        const ready = stages[p.stage] === 'done' || stages[p.stage] === 'override' || key === 'fc'
+        if (!p) return null                             // not measured on this job (e.g. undecided: only a few params exist)
+        // an undecided job never marks its stages "done" (the search stopped partway); its params are still final
+        const ready = stages[p.stage] === 'done' || stages[p.stage] === 'override' || key === 'fc' || SCENARIO.view.verdict === 'undecided'
         const isOpen = open === key
         let value = p.value, unit = p.unit, method = p.method
         if (key === 'modulation' && override) { value = override; method = 'manual' }
