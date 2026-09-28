@@ -3,8 +3,8 @@ The hypothesis-tree search (search.py) calls these same functions for every bran
 from dataclasses import dataclass, field
 import numpy as np
 from .recipe import Recipe
-from .chain import sps_of, asm_symbols, scrambler_seq, check_geometry, tail_bits, encode_frames
-from .demod import llr_qpsk
+from .chain import sps_of, asm_symbols, scrambler_seq, check_geometry, tail_bits, encode_frames, coded_len
+from .demod import llr_symbols, constellation, vv_ref_phase, BPS, ROT_ORDER
 from .dsp import rotate, sample_at
 from .measure import cfo_power, timing_fit
 from .coding import block_deinterleave
@@ -15,9 +15,11 @@ ASM_ACCEPT = 0.5          # normalised ASM correlation needed to accept a frame 
 VV_BLOCK = 256            # symbols per Viterbi-Viterbi phase block
 
 
-def symbols(x: np.ndarray, fs: float, sps_nom: float, rolloff: float, M: int = 4):
+def symbols(x: np.ndarray, fs: float, sps_nom: float, rolloff: float, M: int = 4, ref_phase: float = np.pi):
     """PHY front-end up to derotated symbols: CFO (M-th power), timing (measured rate), matched filter at
-    the fractional instants, Viterbi-Viterbi phase (2 pi / M ambiguity remains).
+    the fractional instants, Viterbi-Viterbi phase (2 pi / M ambiguity remains). ref_phase is the phase
+    that raising the modulation's constellation to the M-th power leaves behind (demod.vv_ref_phase);
+    the default pi matches QPSK's legacy odd-multiples-of-pi/4 points ('-sum').
     Returns (ys, sps, t0, cfo, theta); stream symbol k sits at sample t0 + k * sps."""
     cfo = cfo_power(x, fs, M)
     xc = rotate(x, -cfo / fs)
@@ -26,7 +28,7 @@ def symbols(x: np.ndarray, fs: float, sps_nom: float, rolloff: float, M: int = 4
     ys = sample_at(xc, t0 + sps * k, sps, rolloff)
     nb = max(1, ys.size // VV_BLOCK)
     blk = ys[: nb * VV_BLOCK].reshape(nb, VV_BLOCK).astype(np.complex128)
-    thM = np.unwrap(np.angle(-np.sum(blk ** M, 1)))
+    thM = np.unwrap(np.angle(np.sum(blk ** M, 1) * np.exp(-1j * ref_phase)))
     theta = np.interp(np.arange(ys.size), (np.arange(nb) + 0.5) * VV_BLOCK, thM / M)
     return (ys * np.exp(-1j * theta)).astype(np.complex64), sps, t0, cfo, theta
 
@@ -85,24 +87,32 @@ def frame_sync(ys: np.ndarray, asm: np.ndarray, period: int):
 def frontend(x: np.ndarray, recipe: Recipe, pre=None) -> FrontEnd:
     """pre: an already computed symbols() tuple for the same PHY (lets the search reuse it)."""
     fs, sps_nom, beta = recipe.sample_rate_hz, sps_of(recipe), recipe.modulation.rolloff
-    ys, sps, t0, cfo, theta = pre if pre is not None else symbols(x, fs, sps_nom, beta)
+    scheme = recipe.modulation.scheme
+    ys, sps, t0, cfo, theta = pre if pre is not None else symbols(x, fs, sps_nom, beta, M=ROT_ORDER[scheme], ref_phase=vv_ref_phase(scheme))
     asm = asm_symbols(recipe)
     check_geometry(recipe)
-    period = asm.size + recipe.interleaver.rows * recipe.interleaver.cols // 2
+    period = asm.size + coded_len(recipe) // BPS[scheme]
     conj, starts, cn, c = frame_sync(ys, asm, period)
     if starts.size == 0:
         raise RuntimeError("no frame sync found under this recipe")
     z = np.conj(ys) if conj else ys
-    rot = np.round(np.angle(c) / (np.pi / 2)) * (np.pi / 2)
+    step = 2 * np.pi / ROT_ORDER[scheme]
+    rot = np.round(np.angle(c) / step) * step
     frames = np.stack([z[s: s + period] for s in starts]) * np.exp(-1j * rot)[:, None]
-    amp, sigma2 = qpsk_amp_noise(frames[:, asm.size:].ravel())
+    amp, sigma2 = decision_directed(scheme, frames[:, asm.size:].ravel())
     return FrontEnd(sps, sps_nom, cfo, t0, conj, period, starts, cn, rot, theta, frames.astype(np.complex64), amp, sigma2)
 
 
-def qpsk_amp_noise(body: np.ndarray) -> tuple[float, float]:
-    """Decision-directed amplitude and complex noise variance of derotated QPSK symbols."""
-    dec = (np.sign(body.real) + 1j * np.sign(body.imag)) * np.float32(np.sqrt(0.5))
-    amp = float(np.real(np.vdot(dec, body)) / dec.size)
+def decision_directed(scheme: str, body: np.ndarray, iters: int = 4) -> tuple[float, float]:
+    """Decision-directed amplitude and complex noise variance against the scheme's (unit-energy)
+    constellation. PSK decisions are scale-invariant (nearest phase); QAM needs the iteration to
+    separate its amplitude rings, so the estimate is refined a few times."""
+    tab = constellation(scheme)
+    amp = float(np.sqrt(np.mean(np.abs(body) ** 2)))
+    dec = tab[0]
+    for _ in range(iters):
+        dec = tab[np.abs(body[:, None] - amp * tab[None, :]).argmin(1)]
+        amp = float(np.real(np.vdot(dec, body)) / np.real(np.vdot(dec, dec)))
     return amp, float(np.mean(np.abs(body - amp * dec) ** 2))
 
 
@@ -120,7 +130,7 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
     check_geometry(recipe)
     na = asm_symbols(recipe).size
     body = fe.frames[:, na:]
-    llr = llr_qpsk(body, fe.amp, fe.sigma2)
+    llr = llr_symbols(recipe.modulation.scheme, body, fe.amp, fe.sigma2)
     llr *= (1.0 - 2.0 * scrambler_seq(recipe, llr.shape[1]))[None].astype(np.float32)
     il, fec = recipe.interleaver, recipe.fec
     llr = block_deinterleave(llr, il.rows, il.cols)

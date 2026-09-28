@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field as F
 
 
 class Modulation(BaseModel):
-    scheme: Literal["qpsk"]
+    scheme: Literal["bpsk", "qpsk", "8psk", "16qam", "64qam"]
     mapping: Literal["gray"] = "gray"
     symbol_rate_hz: float = F(gt=0)
     pulse: Literal["rrc"] = "rrc"
