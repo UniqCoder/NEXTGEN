@@ -4,9 +4,9 @@ import { Conf, MethodTag } from '../components/ui'
 import { Terrain } from '../components/Terrain'
 import { ingest, type Ingested } from '../lib/ingest'
 import { CONTENT_TEXT } from '../lib/triage'
-import { ENGINE, RECENT, SCENARIO, fmtBytes } from '../lib/engine'
+import { ENGINE, RECENT, SCENARIO, fmtBytes, ping } from '../lib/engine'
 import { go } from '../lib/router'
-import { loadSampleLibrary, runAutopilot, runSampleJob, setPending, setState, useApp } from '../lib/store'
+import { getState, loadSampleLibrary, runAutopilot, runSampleJob, setPending, setState, useApp } from '../lib/store'
 import { engineDtype } from '../lib/engine'
 
 const ACCEPT = '.wav,.iq,.cfile,.bin,.raw,.dat,.cu8,.cs8,.cs16,.cf32,.sigmf-data,.sigmf-meta'
@@ -64,7 +64,19 @@ export function Ingest() {
             <span className="small dimmer">Optional: drop a .sigmf-meta sidecar with it</span>
             <div className="row" style={{ marginTop: 18 }}>
               <button className="btn" onClick={() => input.current?.click()}>Choose file</button>
-              <button className="btn ghost" onClick={() => { setPending(null); autopilot() }}>Try the demo capture</button>
+              <button className="btn ghost" onClick={async () => {
+                // With a live engine, run the real sample behind the scripted walkthrough instead of the
+                // scripted mock timeline - what this button shows should always be a real decode when one
+                // is available, never numbers that only look like one. ENGINE.connected/samples are set by
+                // a background ping()/loadSampleLibrary() that may not have resolved yet on a fast click, so
+                // check for real here rather than trusting whatever they happened to reach by now (that race
+                // is what silently fell back to the mock walkthrough even with the engine reachable).
+                if (ENGINE.available && !ENGINE.connected) await ping()
+                if (ENGINE.connected && getState().samples.length === 0) await loadSampleLibrary()
+                const demo = getState().samples.find((s) => s.id === 'syn-qpsk-k7-48x32-12db')
+                if (ENGINE.connected && demo) { go('/signal'); runSampleJob(demo); return }
+                setPending(null); autopilot()
+              }}>Try the demo capture</button>
             </div>
             <input ref={input} type="file" multiple accept={ACCEPT} hidden onChange={(e) => take(e.target.files)} />
           </div>
