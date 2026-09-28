@@ -124,6 +124,7 @@ class Unwrapped:
     reencoded: np.ndarray           # (F, Nc) re-encoded code bits (for corrections / K2)
     fields: list[dict]              # per frame: field name -> int value (payload as hex)
     crc_ok: np.ndarray              # (F,)
+    fec_ok: np.ndarray | None = None    # RS only: frame's codeword was clean or successfully corrected
 
 
 def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
@@ -134,16 +135,17 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
     llr *= (1.0 - 2.0 * scrambler_seq(recipe, llr.shape[1]))[None].astype(np.float32)
     il, fec = recipe.interleaver, recipe.fec
     llr = deinterleave(llr, il.kind, il.rows, il.cols, il.seed)
+    fec_ok = None
     if fec.family == "rs":
         hard = bits_to_symbols((llr < 0).astype(np.uint8), fec.m)
-        info_syms, rs_ok = rs_decode(hard, fec.n, fec.k, fec.m)
+        info_syms, fec_ok = rs_decode(hard, fec.n, fec.k, fec.m)
         info = symbols_to_bits(info_syms, fec.m)
     else:
         u = viterbi_soft(llr, fec.K, tuple(fec.generators_octal), fec.terminated)
         info = u[:, : u.shape[1] - tail_bits(recipe)]
     reenc = deinterleave(encode_frames(recipe, info)["interleaved"], il.kind, il.rows, il.cols, il.seed)
     fields, crc_ok = parse_fields(recipe, info)
-    return Unwrapped(llr, (llr < 0).astype(np.uint8), info, reenc, fields, crc_ok)
+    return Unwrapped(llr, (llr < 0).astype(np.uint8), info, reenc, fields, crc_ok, fec_ok)
 
 
 def parse_fields(recipe: Recipe, info: np.ndarray) -> tuple[list[dict], np.ndarray]:

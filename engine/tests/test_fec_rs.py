@@ -1,7 +1,10 @@
-"""PS clause (iv): Reed-Solomon FEC through the full known-recipe chain (encode -> channel -> decode)."""
+"""PS clause (iv): Reed-Solomon FEC through the full known-recipe chain (encode -> channel -> decode),
+and through the layered proof (certificate)."""
+import pytest
 from sanjaya.recipe import Recipe, Modulation, RSCode, Interleaver, Scrambler, Crc, Field, Framing
 from sanjaya.gen import generate
 from sanjaya.pipeline import frontend, unwrap
+from sanjaya.proof import prove
 
 
 def rs_recipe() -> Recipe:
@@ -21,3 +24,20 @@ def test_rs_decodes_bit_exact_with_channel_noise():
     uw = unwrap(fe, r)
     assert len(fe.starts) == truth["n_frames"] and uw.crc_ok.all()
     assert (uw.info == taps["info"]).all()
+    assert uw.fec_ok is not None and uw.fec_ok.all()
+
+
+def test_rs_passes_every_proof_layer():
+    x, r, *_ = generate(recipe=rs_recipe(), esn0_db=9.0, n_frames=20)
+    assert [v.verdict for v in prove(x, r)] == ["pass", "pass", "pass"]
+
+
+@pytest.mark.parametrize("change", [
+    {"interleaver": {"rows": 21, "cols": 18}},
+    {"scrambler": {"seed": 0xFE}},
+])
+def test_rs_wrong_recipe_fails(change):
+    x, r, *_ = generate(recipe=rs_recipe(), esn0_db=9.0, n_frames=20)
+    (sect, upd), = change.items()
+    wrong = r.model_copy(update={sect: getattr(r, sect).model_copy(update=upd)})
+    assert any(v.verdict == "fail" for v in prove(x, wrong))
