@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useAnimationControls } from 'motion/react'
-import { Panel, Scrub } from '../components/ui'
+import { Panel } from '../components/ui'
 import { Step } from '../components/Step'
 import { Autocorr } from '../components/Plots'
 import { FRAME, SCENARIO, bitstream, columnStats, crcSearch, findSync } from '../lib/engine'
@@ -11,7 +11,7 @@ const KIND_VAR: Record<string, string> = { const: '--signal', counter: '--signal
 
 export function Frames() {
   const undecided = useApp((s) => s.job === 'undecided')
-  if (undecided) return <Step n={4} title="Header & payload" lede={null} back={{ to: '/decoding', label: 'Decoding' }} next={{ to: '/proof', label: 'Continue to proof', disabled: true }}>{null}</Step>
+  if (undecided) return <Step n={4} title="Header & payload" lede={null} back={{ to: '/decoding', label: 'Decoding' }}>{null}</Step>
   return <FramesReady />
 }
 
@@ -36,10 +36,6 @@ function FramesReady() {
     setSnapFlash(performance.now())
     shake.start({ x: [0, -2, 1.5, 0], transition: { duration: 0.16, ease: 'linear' } })
   }
-  const setWidth = (v: number) => {
-    if (Math.abs(v - FRAME.len) <= 2 && w !== FRAME.len) { setW(FRAME.len); snap() }
-    else if (Math.abs(v - FRAME.len) > 2 || w !== FRAME.len) setW(v)
-  }
   const animateTo = (to: number, set: (v: number) => void, from: number, done?: () => void) => {
     const t0 = performance.now(), dur = 700
     const tick = () => {
@@ -52,7 +48,6 @@ function FramesReady() {
     requestAnimationFrame(tick)
   }
 
-  const header = FRAME.fields.filter((f) => f.group === 'HEADER')
   const pay = FRAME.fields.filter((f) => f.group === 'PAYLOAD')
   const payFrom = pay.length ? pay[0].start : 0, payTo = pay.length ? pay[pay.length - 1].start + pay[pay.length - 1].len : 0
   const crcField = FRAME.fields.find((f) => f.kind === 'crc')
@@ -88,9 +83,9 @@ function FramesReady() {
       n={4}
       title="Header & payload"
       lede={aligned
-        ? <>Frames repeat every <b>{FRAME.len} bits</b>. The <b>header</b> is {bits('HEADER')} bits ({names('HEADER')}). The <b>payload</b> is {bits('PAYLOAD')} bits of {encrypted ? 'high-entropy data, likely encrypted' : 'data'}.{crcField ? ` A CRC-${crcField.len} closes each frame.` : ''}</>
+        ? <>Frames repeat every <b>{FRAME.len} bits</b>. The <b>header</b> is {bits('HEADER')} bits ({names('HEADER')}). The <b>payload</b> is {bits('PAYLOAD')} bits of {encrypted ? 'high entropy data, likely encrypted' : 'data'}.{crcField ? ` A CRC-${crcField.len} closes each frame.` : ''}</>
         : locked ? `The frame length is ${FRAME.len} bits. Now align to the sync word so the fields can be labelled.`
-        : 'Find the frame length: drag Width until the columns go straight, or press Find frame length.'}
+        : 'Find the frame length to group the decoded bits into rows; then align the repeating header.'}
       back={{ to: '/decoding', label: 'Decoding' }}
       next={{ to: '/proof', label: 'Continue to proof', disabled: !doneStage }}
       extra={
@@ -101,17 +96,16 @@ function FramesReady() {
       }
     >
       <div className="frm">
-        <Panel title="Bit stream correlation" alt="each row is one frame" style={{ gridArea: 'raster' }}
+        <Panel title="Decoded bits by frame" alt="repeating columns reveal structure" style={{ gridArea: 'raster' }}
           tools={
             <>
-              <Scrub k="WIDTH" value={w} min={64} max={320} onChange={setWidth} fmt={(v) => v + ' b'} />
-              <Scrub k="PHASE" value={phase} min={0} max={Math.max(0, w - 1)} onChange={setPhase} />
+              <span className="mono small dim">{w} bits per row</span>
               {aligned ? (
                 <button className="btn sm" onClick={replay}>Replay discovery</button>
               ) : (
                 <>
                   <button className="btn sm" disabled={locked} onClick={() => animateTo(FRAME.len, setW, w, snap)}>Find frame length</button>
-                  <button className="btn sm" disabled={!locked} onClick={() => animateTo(sync, setPhase, phase)}>Align to sync</button>
+                  <button className="btn sm" disabled={!locked} onClick={() => animateTo(sync, setPhase, phase)}>Align header</button>
                 </>
               )}
             </>
@@ -124,18 +118,19 @@ function FramesReady() {
                     <Bracket from={0} to={payFrom} total={w} label="HEADER" big />
                     {payTo > payFrom && <Bracket from={payFrom} to={payTo} total={w} label="PAYLOAD" big />}
                     {crcField && <Bracket from={crcField.start} to={crcField.start + crcField.len} total={w} label="CRC" big />}
-                    {header.map((f) => <Bracket key={f.name} from={f.start} to={f.start + f.len} total={w} label={f.name} />)}
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
+            <p className="lens-guide">{aligned
+              ? 'Each row is one frame. Orange columns repeat in the header; varied grey columns carry payload bits. The top strip shows how much each bit position changes.'
+              : 'Each row groups consecutive decoded bits. Find the row length, then align the repeating header to reveal the fields.'}</p>
             <motion.div className="lens-body" animate={shake}>
               <Raster stream={stream} w={w} phase={phase} ent={stats.ent} aligned={aligned} flash={snapFlash} />
             </motion.div>
             <div className="lens-foot small dim">
               <span>{stats.rows} frames × {w} bits</span>
-              <span>Top strip: how random each column is</span>
-              {locked && <span className="signal">Locked at {FRAME.len} bits, the autocorrelation peak</span>}
+              <span>{aligned ? 'Header and payload boundaries shown above' : 'Use the buttons above to group and align frames'}</span>
             </div>
           </div>
         </Panel>
@@ -251,7 +246,7 @@ function Raster({ stream, w, phase, ent, aligned, flash }: { stream: Uint8Array;
   }, [W, H, stream, w, phase, ent, aligned, flash, theme])
   return (
     <div ref={wrap} className="plot">
-      <canvas ref={cv} />
+      <canvas ref={cv} role="img" aria-label={`${Math.floor((stream.length - phase) / w)} decoded frames, ${w} bits per row. ${aligned ? 'Header columns repeat at the start; payload columns vary.' : 'Frame alignment pending.'}`} />
     </div>
   )
 }

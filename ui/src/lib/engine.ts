@@ -6,6 +6,11 @@
 import * as M from './mock'
 export * from './mock'
 
+// The landing illustration is a fixed demo scene; live jobs replace the analysis objects below.
+export const HERO_SCENARIO = structuredClone(M.SCENARIO)
+export const HERO_SPEC = { ...M.SPEC }
+export const HERO_SPECTROGRAM = M.spectrogram()
+
 const TOKEN = new URLSearchParams(location.search).get('token')
 const BASE: string = (import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_ENGINE ?? ''
 
@@ -175,6 +180,28 @@ export async function downloadReceiver() {
 
 export interface VerifyResult {
   reproduced: boolean; problems: string[]; certificate_id: string; verdict: string | null; signature: string
+}
+
+export async function downloadJobCertificate() {
+  if (!ENGINE.job) return
+  const blob = await (await api(`/v1/jobs/${ENGINE.job}/certificate.json`)).blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `sanjaya-certificate-${ENGINE.job}.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+export async function loadJobRecording(): Promise<File> {
+  if (!ENGINE.job) throw new Error('No active analysis')
+  const r = await api(`/v1/jobs/${ENGINE.job}/recording`)
+  return new File([await r.blob()], decodeURIComponent(r.headers.get('X-Sanjaya-Filename') ?? 'recording.iq'))
+}
+
+export async function loadJobSidecar(): Promise<string | null> {
+  if (!ENGINE.job) return null
+  try { return await (await api(`/v1/jobs/${ENGINE.job}/sigmf-meta`)).text() }
+  catch { return null }
 }
 
 /** Independent re-check ("sanjaya verify"): a certificate.json + its recording, re-derived from the file

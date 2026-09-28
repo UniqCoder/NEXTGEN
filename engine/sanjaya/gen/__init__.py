@@ -2,7 +2,8 @@
 Scope: the G1 vertical slice (QPSK + CC K=7 + block 48x32 + additive scrambler + CRC frames)."""
 import numpy as np
 from ..recipe import Recipe, Modulation, ConvCode, Interleaver, Scrambler, Crc, Field, Framing
-from ..chain import encode_frames, shape, sps_of
+from ..chain import encode_frames, encode_frames_fsk, shape, synth_fsk, sps_of
+from ..demod import fsk_tones
 from ..bits import crc_bits, to_bits
 from ..dsp import rotate
 
@@ -18,6 +19,25 @@ def gen0_recipe(symbol_rate: float = 9600.0, sps: float = 8, rolloff: float = 0.
         interleaver=Interleaver(rows=48, cols=32),
         scrambler=Scrambler(poly_exponents=[8, 7, 5, 3, 0], seed=0xFF),
         framing=Framing(asm_hex="1ACFFC1D", fields=fields,
+                        crc=Crc(width=16, poly=0x1021, init=0xFFFF)))
+
+
+def gen_fsk_recipe(scheme: str = "fsk4", symbol_rate: float = 1200.0, sps: float = 16,
+                    tone_spacing_hz: float | None = None) -> Recipe:
+    """Same frame structure as gen0_recipe (762 info + 6 tail bits -> 1536 coded = 48x32), on a
+    non-coherent MFSK tone bank instead of QPSK. ASM length must be a multiple of the scheme's bps."""
+    asm_hex = {"fsk2": "1ACFFC1D", "fsk4": "1ACFFC1D", "fsk8": "1ACFFC"}[scheme]  # 32 / 32 / 24 bits
+    fields = [Field(name="counter", bits=16, kind="counter"), Field(name="length", bits=8, kind="length"),
+              Field(name="payload", bits=704, kind="payload"), Field(name="crc", bits=16, kind="crc"),
+              Field(name="fill", bits=18, kind="fill")]
+    return Recipe(
+        sample_rate_hz=symbol_rate * sps,
+        modulation=Modulation(scheme=scheme, symbol_rate_hz=symbol_rate, rolloff=0.0,
+                               fsk_tone_spacing_hz=tone_spacing_hz or 2 * symbol_rate),
+        fec=ConvCode(K=7, generators_octal=["171", "133"]),
+        interleaver=Interleaver(rows=48, cols=32),
+        scrambler=Scrambler(poly_exponents=[8, 7, 5, 3, 0], seed=0xFF),
+        framing=Framing(asm_hex=asm_hex, fields=fields,
                         crc=Crc(width=16, poly=0x1021, init=0xFFFF)))
 
 
@@ -49,21 +69,26 @@ def generate(seed: int = 147, esn0_db: float = 12.0, n_frames: int = 40, guard_s
     """Returns (x complex64, recipe, truth dict, taps dict). clock_ppm: receiver sample clock error
     (+ = receiver clock fast, so each symbol spans sps*(1 + ppm*1e-6) samples of the recording)."""
     recipe = recipe or gen0_recipe()
+    fsk = recipe.modulation.scheme.startswith("fsk")
     rng = np.random.default_rng(seed)
     fs, sps = recipe.sample_rate_hz, sps_of(recipe)
     pay_bits = next(f.bits for f in recipe.framing.fields if f.kind == "payload")
     counters = (int(rng.integers(0, 1 << 16)) + np.arange(n_frames)) % (1 << 16)
     payload = rng.integers(0, 2, (n_frames, pay_bits), dtype=np.uint8)
     info = build_info(recipe, counters, payload)
-    taps = encode_frames(recipe, info)
-    stream = taps["symbols"].ravel()
+    taps = encode_frames_fsk(recipe, info) if fsk else encode_frames(recipe, info)
+    stream = taps["tone_idx" if fsk else "symbols"].ravel()
 
     guard = int(round(guard_s * fs))
     sps_rx = sps * (1 + clock_ppm * 1e-6)
     n = 2 * guard + int(np.ceil(stream.size * sps_rx))
     cfo = float(rng.uniform(-400, 400)) if cfo_hz is None else cfo_hz
     phase, delay = float(rng.uniform(0, 2 * np.pi)), float(rng.uniform(0, sps))
-    clean = shape(stream, sps_rx, recipe.modulation.rolloff, n, guard + delay)
+    if fsk:
+        tones = fsk_tones(recipe.modulation.scheme, recipe.modulation.fsk_tone_spacing_hz)
+        clean = synth_fsk(stream, tones, sps_rx, fs, n, guard + delay)
+    else:
+        clean = shape(stream, sps_rx, recipe.modulation.rolloff, n, guard + delay)
     imp = gain * rotate(clean, cfo / fs, phase)
     p_sig = float(np.mean(np.abs(imp[guard: n - guard]) ** 2))
     sigma2 = p_sig * sps / 10 ** (esn0_db / 10)                        # Es/N0 = P * sps / sigma^2

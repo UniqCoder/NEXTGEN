@@ -20,8 +20,10 @@ def test_compiled_receiver_is_bit_exact_and_portable(tmp_path):
     src = write_sigmf(tmp_path / "rec", x, r.sample_rate_hz)
     recipe, _ = blind_search(x, r.sample_rate_hz)
     sha = sha256_file(src)
-    z, gate = compile_package(recipe, sign(build_body(x, recipe, sha, "search")), "SNJ-T", src, x, sha)
+    cert = sign(build_body(x, recipe, sha, "search"))
+    z, gate = compile_package(recipe, cert, "SNJ-T", src, x, sha)
     assert gate["passed"] and gate["frames_equal"] == gate["frames"] == truth["n_frames"]
+    assert compile_package(recipe, {**cert, "signature": None}, "SNJ-T", src, x, sha)[0] is None
     files = zipfile.ZipFile(io.BytesIO(z))
     assert set(files.namelist()) == {"receiver.py", "recipe.sigmf-meta", "sanjaya_receiver.grc", "README.txt"}
     assert json.loads(files.read("recipe.sigmf-meta"))["global"]["sanjaya:recipe"]["fec"]["K"] == 7

@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { LUTS } from '../lib/colormap'
-import { SCENARIO, SPEC, freqBin, spectrogram } from '../lib/engine'
+import { HERO_SCENARIO, HERO_SPEC, HERO_SPECTROGRAM, SCENARIO, SPEC, spectrogram } from '../lib/engine'
 import { css } from '../lib/plot'
 import { useApp } from '../lib/store'
 
@@ -117,11 +117,13 @@ interface Label { text: string; sub?: string; pos: THREE.Vector3; kind: 'emitter
 function Surface(props: TerrainProps) {
   const cmap = useApp((s) => s.cmap)
   const theme = useApp((s) => s.theme)
-  const spec = useMemo(spectrogram, [])
+  const spec = useMemo(() => props.hero ? HERO_SPECTROGRAM : spectrogram(), [props.hero])
+  const meta = props.hero ? HERO_SPEC : SPEC
+  const scene = props.hero ? HERO_SCENARIO : SCENARIO
   const data = useMemo(() => {
-    const n = SPEC.bins * SPEC.rows
+    const n = meta.bins * meta.rows
     const buf = new Uint8Array(n * 4)
-    const { lo, range } = SCENARIO.view
+    const { lo, range } = scene.view
     const pack = (v: number) => Math.max(0, Math.min(255, Math.round(((v - lo) / range) * 255)))
     for (let i = 0; i < n; i++) {
       buf[i * 4] = pack(spec.full[i])
@@ -129,7 +131,7 @@ function Surface(props: TerrainProps) {
       buf[i * 4 + 2] = pack(spec.fail[i])
       buf[i * 4 + 3] = 255
     }
-    const t = new THREE.DataTexture(buf, SPEC.bins, SPEC.rows, THREE.RGBAFormat)
+    const t = new THREE.DataTexture(buf, meta.bins, meta.rows, THREE.RGBAFormat)
     t.minFilter = t.magFilter = THREE.LinearFilter
     t.needsUpdate = true
     return t
@@ -157,8 +159,8 @@ function Surface(props: TerrainProps) {
           uRise: { value: 0 }, uScroll: { value: 0 }, uScan: { value: 0 }, uGlow: { value: 1 },
           uFog: { value: new THREE.Color() }, uFault: { value: new THREE.Color() }, uGrid: { value: new THREE.Color() },
           uScanCol: { value: new THREE.Color() }, uFogNear: { value: 4.5 }, uFogFar: { value: 9.5 },
-          uLo: { value: SCENARIO.view.lo }, uRange: { value: SCENARIO.view.range },
-          uTGrid: { value: SCENARIO.file.duration / SCENARIO.view.gridSeconds },
+          uLo: { value: scene.view.lo }, uRange: { value: scene.view.range },
+          uTGrid: { value: scene.file.duration / scene.view.gridSeconds },
         },
       }),
     [data],
@@ -274,7 +276,7 @@ function Rig({ view, hero }: { view: React.MutableRefObject<View | null>; hero?:
     const drift = hero ? Math.sin(clock.elapsedTime * 0.07) * 0.2 : Math.sin(clock.elapsedTime * 0.1) * 0.04
     c.az += (t.az + drift - c.az) * 0.06
     c.el += (t.el - c.el) * 0.06
-    c.r = hero ? 4.9 : fitR.current * t.zoom
+    c.r = hero ? 4.9 * t.zoom : fitR.current * t.zoom
     camera.position.set(c.r * Math.sin(c.az) * Math.cos(c.el), c.r * Math.sin(c.el), c.r * Math.cos(c.az) * Math.cos(c.el))
     camera.lookAt(hero ? -1.15 : 0, hero ? 0.35 : H * 0.18, 0)
     if (hero) return
@@ -319,21 +321,36 @@ function Projector({ labels, els }: { labels: Label[]; els: React.MutableRefObje
 
 export function Terrain(props: TerrainProps) {
   const view = useRef<View | null>(null)
+  const container = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number } | null>(null)
   const theme = useApp((s) => s.theme)
   const els = useRef<(HTMLDivElement | null)[]>([])
   const gone = props.k > 0.95 && !props.fail
 
+  useEffect(() => {
+    const el = container.current
+    const wheel = (e: WheelEvent) => {
+      const t = view.current
+      if (!t) return
+      e.preventDefault()
+      t.zoom = Math.max(0.5, Math.min(2, t.zoom * (e.deltaY > 0 ? 1.08 : 0.93)))
+    }
+    el?.addEventListener('wheel', wheel, { passive: false })
+    return () => el?.removeEventListener('wheel', wheel)
+  }, [])
+
   const labels = useMemo<Label[]>(() => {
-    const s = spectrogram()
+    const s = props.hero ? HERO_SPECTROGRAM : spectrogram()
+    const meta = props.hero ? HERO_SPEC : SPEC
+    const scene = props.hero ? HERO_SCENARIO : SCENARIO
     const peak = (f: number) => {
-      const b = Math.round(freqBin(f))
+      const b = Math.max(0, Math.min(meta.bins - 1, Math.round(((f + meta.fs / 2) / meta.fs) * meta.bins - 0.5)))
       let m = -200
-      for (let y = SCENARIO.view.rowStart; y < SPEC.rows; y++) m = Math.max(m, s.full[y * SPEC.bins + b])
+      for (let y = scene.view.rowStart; y < meta.rows; y++) m = Math.max(m, s.full[y * meta.bins + b])
       return m
     }
-    const at = (f: number, row: number, db: number) => new THREE.Vector3(((f + SPEC.fs / 2) / SPEC.fs - 0.5) * W, yOf(db, props.floor, props.span) + 0.03, -(row - 0.5) * D)
-    const em = SCENARIO.emitters
+    const at = (f: number, row: number, db: number) => new THREE.Vector3((f / meta.fs) * W, yOf(db, props.floor, props.span) + 0.03, -(row - 0.5) * D)
+    const em = scene.emitters
     const e1 = em[0], e2 = em.find((e) => e.id === 'E2'), e3 = em.find((e) => e.id === 'E3')
     const out: Label[] = [
       { kind: 'emitter', text: gone ? 'E1 · subtracted' : e1.label, sub: gone ? 'only noise is left' : e1.sub, pos: at(e1.fc, props.hero ? 0.62 : 0.55, gone ? props.floor + 4 : peak(e1.fc)) },
@@ -357,9 +374,13 @@ export function Terrain(props: TerrainProps) {
 
   return (
     <div
+      ref={container}
       className={'plot terrain' + (props.hero ? ' hero' : '')}
-      style={{ cursor: props.hero ? 'default' : 'grab' }}
-      onPointerDown={(e) => { if (props.hero) return; drag.current = { x: e.clientX, y: e.clientY }; (e.currentTarget as Element).setPointerCapture(e.pointerId) }}
+      style={{ cursor: 'grab', touchAction: 'none' }}
+      tabIndex={0}
+      role="application"
+      aria-label="Interactive 3D signal terrain. Drag to rotate, scroll to zoom, arrow keys to rotate, plus and minus to zoom, Home to reset."
+      onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY }; e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId) }}
       onPointerMove={(e) => {
         const t = view.current
         if (!drag.current || !t) return
@@ -368,7 +389,20 @@ export function Terrain(props: TerrainProps) {
         drag.current = { x: e.clientX, y: e.clientY }
       }}
       onPointerUp={() => (drag.current = null)}
-      onWheel={(e) => { const t = view.current; if (!props.hero && t) t.zoom = Math.max(0.5, Math.min(2, t.zoom * (e.deltaY > 0 ? 1.08 : 0.93))) }}
+      onPointerCancel={() => (drag.current = null)}
+      onKeyDown={(e) => {
+        const t = view.current
+        if (!t) return
+        if (e.key === 'Home') view.current = null
+        else if (e.key === 'ArrowLeft') t.az = Math.max(-1.2, t.az - 0.1)
+        else if (e.key === 'ArrowRight') t.az = Math.min(1.2, t.az + 0.1)
+        else if (e.key === 'ArrowUp') t.el = Math.min(1.4, t.el + 0.1)
+        else if (e.key === 'ArrowDown') t.el = Math.max(0.15, t.el - 0.1)
+        else if (e.key === '+' || e.key === '=') t.zoom = Math.max(0.5, t.zoom * 0.9)
+        else if (e.key === '-') t.zoom = Math.min(2, t.zoom * 1.1)
+        else return
+        e.preventDefault()
+      }}
       onDoubleClick={() => (view.current = null)}
     >
       <Canvas key={theme} dpr={[1, 2]} camera={{ fov: 30, near: 0.1, far: 60 }} gl={{ antialias: true, powerPreference: 'high-performance' }}

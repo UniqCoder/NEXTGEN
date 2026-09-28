@@ -221,7 +221,7 @@ export function StageGlyph({ s }: { s: StageStatus }) {
 
 export function Conf({ p, width = 56 }: { p: number; width?: number }) {
   return (
-    <span className="row" style={{ gap: 6 }} title={`Calibrated probability ${p.toFixed(2)}`}>
+    <span className="row" style={{ gap: 6 }} title={`Uncalibrated evidence score ${p.toFixed(2)}`}>
       <span style={{ width, height: 3, background: 'var(--line-2)', position: 'relative', display: 'inline-block' }}>
         <span style={{ position: 'absolute', inset: 0, width: `${p * 100}%`, background: 'var(--bone-2)' }} />
       </span>

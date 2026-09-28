@@ -1,9 +1,9 @@
 import { SCENARIO } from '../lib/engine'
 
 const LIMIT: Record<string, string> = {
-  data: 'too short', channel: 'not separable', scope: 'outside v1', structure: 'not present', signal: 'no emission',
+  data: 'too short', channel: 'not separable', scope: 'unsupported', structure: 'sync not found', signal: 'no emission',
 }
-const VERDICT = { sufficient: 'Sufficient', more_data: 'Record more', not_data_limited: 'Not a length problem' }
+const VERDICT = { sufficient: 'Sufficient', more_data: 'Record more', not_data_limited: 'No length estimate' }
 
 /** USP 3a: the evidence ledger of the blind search, with the predicted recording length when more data would help. */
 export function Sufficiency() {

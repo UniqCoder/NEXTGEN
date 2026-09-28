@@ -1,23 +1,19 @@
 import { go } from '../lib/router'
 
-// Problem statement SIH 26147, clause by clause, with where each one lives in the UI.
+// Coverage is about demonstrated engine behaviour, not the presence of a screen.
 const ROWS = [
-  { c: 'Input: .IQ or .wav', where: 'Ingest', to: '/ingest', what: 'Both accepted; route shown (WAV header read vs raw IQ inferred); manual override form; SigMF sidecar read' },
-  { c: '(i) Sampling frequency', where: 'Step 2 · Signal', to: '/signal', what: 'File sample rate and symbol rate, both labelled, with confidence and method' },
-  { c: '(i) Modulation', where: 'Step 2 · Signal', to: '/signal', what: 'Type and order, calibrated probability per candidate, 95 % conformal set' },
-  { c: '(i) FEC', where: 'Step 3 · Decoding', to: '/decoding', what: 'Code type and parameters' },
-  { c: '(i) Interleaving', where: 'Step 3 · Decoding', to: '/decoding', what: 'Type and size' },
-  { c: '(ii) Demodulate FSK, QAM, PSK', where: 'Step 2 · Signal', to: '/signal', what: 'Constellation, eye and EVM for PSK/QAM; discriminator trace and tone spacing for FSK' },
-  { c: '(iii) Block, Convolutional, Diagonal, Pseudo-random', where: 'Step 3 · Decoding', to: '/decoding', what: 'All four named, scored, and manually selectable in Expert mode' },
-  { c: '(iv) Conv + Viterbi, RS, Concatenated, LDPC', where: 'Step 3 · Decoding', to: '/decoding', what: 'All four named; concatenated chain drawn explicitly; LDPC reported honestly' },
-  { c: '(v) Bit stream correlation', where: 'Step 4 · Header & payload', to: '/frames', what: 'Autocorrelation plot, sync-word search, frame alignment raster' },
-  { c: 'Spectral features: sampling frequency, constellation, waterfall', where: 'Step 2 · Signal (default view)', to: '/signal', what: 'Waterfall, PSD and constellation visible on first load, no toggles' },
-  { c: 'Header and payload identification', where: 'Step 4 · Header & payload', to: '/frames', what: 'Fields grouped under the literal labels HEADER and PAYLOAD' },
-  { c: 'Automated', where: 'Autopilot (default mode)', to: '/ingest', what: 'One click from raw file to header / payload, no required input' },
-  { c: 'Improve feature visibility', where: 'All plots', to: '/signal', what: 'Wheel zoom, crosshair readout, colour legend, linked frequency selection, colour-blind map, 2D default' },
-  { c: 'Accuracy and confidence', where: 'Signal, Decoding, Proof, Certificate', to: '/proof', what: 'Confidence per value, Blind / Library / Manual tags, proof of decode' },
-  { c: 'Output for designated sensors', where: 'Certificate · exports', to: '/certificate', what: 'JSON report, SigMF, bits, header / payload CSV, PDF certificate' },
-  { c: 'Additional features', where: 'Scene, Standards, Challenge', to: '/scene', what: 'Multi-signal scene, hidden-signal reveal, standard recognition, few-shot teach' },
+  { c: '.IQ and .wav input', to: '/ingest', status: 'Working', what: 'SigMF, common raw IQ and PCM/float WAV; large-file streaming and RF64 remain open.' },
+  { c: 'Sampling and signal parameters', to: '/signal', status: 'Partial', what: 'Header sample rate and measured rate, band, offset and SNR; intervals are not calibrated.' },
+  { c: 'Modulation identification', to: '/signal', status: 'Partial', what: 'Blind BPSK/QPSK on the supported frame family; six public HF files identified at family/rate level.' },
+  { c: 'FEC identification', to: '/decoding', status: 'Partial', what: 'Blind rate 1/2 convolutional K=3–9; RS, concatenated and LDPC need a supplied recipe.' },
+  { c: 'Interleaving identification', to: '/decoding', status: 'Partial', what: 'Blind block geometry; diagonal, pseudo random and convolutional identification remain open.' },
+  { c: 'FSK, PSK and QAM demodulation', to: '/signal', status: 'Partial', what: 'PSK/QAM work with a supplied recipe. A tested FSK tone bank is not yet wired into jobs.' },
+  { c: 'Four deinterleaver types', to: '/decoding', status: 'Partial', what: 'Block, diagonal and pseudo random work with supplied recipes; convolutional has a tested standalone inverse.' },
+  { c: 'Viterbi, RS, concatenated, LDPC', to: '/decoding', status: 'Recipe only', what: 'All four decode generated recordings with a supplied recipe; broad blind selection is open.' },
+  { c: 'Bit stream, header and payload', to: '/frames', status: 'Partial', what: 'Blind sync, CRC and fields on generated BPSK/QPSK captures; real payload decode is open.' },
+  { c: 'Proof and certificate', to: '/proof', status: 'Working', what: 'Layered proof and signed recheckable certificate. Wrong certificate rate is unmeasured.' },
+  { c: 'Sufficiency and sensor stitching', to: '/scene', status: 'Synthetic', what: 'Evidence ledger, length estimate and multisensor pooling tested on generated captures.' },
+  { c: 'Receiver compiler', to: '/certificate', status: 'Synthetic', what: 'Standalone receiver gated bit for bit on generated captures; GNU Radio graph is unexecuted.' },
 ]
 
 export function Compliance() {
@@ -25,24 +21,17 @@ export function Compliance() {
     <div className="compliance">
       <header>
         <span className="label">SIH 2026 · PS 26147 · NTRO</span>
-        <h2>Problem-statement compliance</h2>
-        <p className="dim">Every clause of the problem statement, where it lives on screen, and whether the engine behind it is wired yet.</p>
-        <div className="comp-stats">
-          <div><span className="mono big">{ROWS.length} / {ROWS.length}</span><span className="label">clauses with a UI home</span></div>
-          <div><span className="mono big">0 / {ROWS.length}</span><span className="label">wired to the engine</span></div>
-          <div><span className="mono big">5</span><span className="label">steps, one after another</span></div>
-        </div>
+        <h2>Capability scorecard</h2>
+        <p className="dim">What the current engine demonstrates. “Partial” and “Recipe only” are not claims of blind recovery on an unknown recording.</p>
       </header>
       <table className="table">
-        <thead><tr><th>Clause</th><th>Where</th><th>What is visible</th><th>UI</th><th>Engine</th></tr></thead>
+        <thead><tr><th>Requirement or feature</th><th>Engine status</th><th>Evidence and limit</th></tr></thead>
         <tbody>
           {ROWS.map((r) => (
-            <tr key={r.c} className="hover" onClick={() => go(r.to)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && go(r.to)}>
+            <tr key={r.c} className="hover" onClick={() => go(r.to)} tabIndex={0} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && go(r.to)}>
               <td>{r.c}</td>
-              <td className="mono small">{r.where} →</td>
+              <td><span className={'tag ' + (r.status === 'Working' ? 'proven' : 'manual')}>{r.status}</span></td>
               <td className="small dim">{r.what}</td>
-              <td><span className="tag plain" style={{ color: 'var(--bone-1)' }}>Built</span></td>
-              <td><span className="tag manual">Demo data</span></td>
             </tr>
           ))}
         </tbody>

@@ -5,7 +5,7 @@ import numpy as np
 from .recipe import Recipe
 from .kernels import conv_encode, rs_encode, bits_to_symbols, symbols_to_bits, systematic_generator, ldpc_encode
 from .coding import interleave, lfsr_sequence
-from .demod import map_qpsk, map_symbols, BPS
+from .demod import map_qpsk, map_symbols, BPS, fsk_tones, gray_decode
 from .dsp import synth_at
 
 
@@ -24,10 +24,13 @@ def scrambler_seq(recipe: Recipe, n: int) -> np.ndarray:
     return np.zeros(n, np.uint8) if s is None else _scr(tuple(s.poly_exponents), s.seed, n)
 
 
-def asm_symbols(recipe: Recipe) -> np.ndarray:
+def asm_bits(recipe: Recipe) -> np.ndarray:
     h = recipe.framing.asm_hex
-    bits = np.unpackbits(np.frombuffer(bytes.fromhex(h), np.uint8))
-    return map_qpsk(bits)
+    return np.unpackbits(np.frombuffer(bytes.fromhex(h), np.uint8))
+
+
+def asm_symbols(recipe: Recipe) -> np.ndarray:
+    return map_qpsk(asm_bits(recipe))
 
 
 def tail_bits(recipe: Recipe) -> int:
@@ -70,8 +73,24 @@ def check_geometry(recipe: Recipe) -> None:
         raise ValueError(f"interleaver {il.rows}x{il.cols} != coded frame {coded_len(recipe)} bits")
 
 
-def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
-    """info (F, Ninfo) -> taps: coded, interleaved, scrambled (F, Nc) and symbols (F, P) incl. the PHY ASM."""
+def encode_frames_fsk(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
+    """FSK variant of encode_frames: non-coherent tone bank, no pulse shaping. Returns the same coded/
+    interleaved/scrambled taps plus 'tone_idx' (F, P) tone indices (ASM + body) in place of 'symbols'."""
+    body_taps = encode_frames(recipe, info, _fsk_body_only=True)
+    scheme = recipe.modulation.scheme
+    bps = BPS[scheme]
+    scr = body_taps["scrambled"]
+    body_idx = gray_decode(scr.reshape(*scr.shape[:-1], -1, bps))
+    asm_idx = gray_decode(asm_bits(recipe).reshape(-1, bps))
+    asm_idx = np.broadcast_to(asm_idx, (info.shape[0], asm_idx.size))
+    body_taps["tone_idx"] = np.concatenate([asm_idx, body_idx], 1).astype(np.int64)
+    return body_taps
+
+
+def encode_frames(recipe: Recipe, info: np.ndarray, _fsk_body_only: bool = False) -> dict[str, np.ndarray]:
+    """info (F, Ninfo) -> taps: coded, interleaved, scrambled (F, Nc) and symbols (F, P) incl. the PHY ASM.
+    FSK recipes: call encode_frames_fsk instead (this still supplies coded/interleaved/scrambled taps
+    for it, via _fsk_body_only, which skips the constellation-mapping 'symbols'/'asm' step)."""
     check_geometry(recipe)
     fec, il = recipe.fec, recipe.interleaver
     if fec.family == "rs":
@@ -97,6 +116,8 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
         coded = conv_encode(u, fec.K, tuple(fec.generators_octal))
     inter = interleave(coded, il.kind, il.rows, il.cols, il.seed)
     scr = inter ^ scrambler_seq(recipe, inter.shape[1])[None]
+    if _fsk_body_only:
+        return {"coded": coded, "interleaved": inter, "scrambled": scr}
     body = map_symbols(recipe.modulation.scheme, scr)
     asm = np.broadcast_to(asm_symbols(recipe), (info.shape[0], asm_symbols(recipe).size))
     return {"coded": coded, "interleaved": inter, "scrambled": scr, "symbols": np.concatenate([asm, body], 1)}
@@ -105,3 +126,21 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
 def shape(symbols: np.ndarray, sps: float, rolloff: float, n_samples: int, first: float) -> np.ndarray:
     """Pulse-shape a symbol stream; symbol m is centred on (fractional) sample first + m*sps."""
     return synth_at(symbols, first + sps * np.arange(symbols.size), sps, rolloff, n_samples)
+
+
+def synth_fsk(tone_idx: np.ndarray, tones_hz: np.ndarray, sps: float, fs: float, n_samples: int, first: float) -> np.ndarray:
+    """Continuous-phase non-coherent MFSK: tone_idx[k] selects tones_hz[tone_idx[k]] for symbol k's
+    duration; phase accumulates across symbol boundaries (avoids a click at every tone switch)."""
+    out = np.zeros(n_samples, np.complex64)
+    edges = first + sps * np.arange(tone_idx.size + 1)
+    phase = 0.0
+    for k, idx in enumerate(tone_idx):
+        a, b = int(np.ceil(edges[k])), int(np.ceil(edges[k + 1]))
+        a, b = max(a, 0), min(b, n_samples)
+        if b <= a:
+            continue
+        t = (np.arange(a, b) - a) / fs
+        f = float(tones_hz[idx])
+        out[a:b] = np.exp(1j * (2 * np.pi * f * t + phase))
+        phase = (phase + 2 * np.pi * f * (b - a) / fs) % (2 * np.pi)
+    return out

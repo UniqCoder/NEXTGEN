@@ -23,6 +23,32 @@ def random_perm(n: int, seed: int) -> np.ndarray:
     return np.random.default_rng(seed).permutation(n)
 
 
+def convolutional_interleave(x: np.ndarray, branches: int, depth: int) -> np.ndarray:
+    """Finite stream through a multiplexed convolutional interleaver; flush delayed branches with zeros.
+
+    Branch i delays i*depth visits. The stream length must be a multiple of branches so the
+    commutator ends at its initial position. The output includes the flush tail.
+    """
+    if branches < 1 or depth < 0 or x.ndim != 1 or x.size % branches:
+        raise ValueError("expected a 1-D stream divisible by positive branches and nonnegative depth")
+    visits = x.size // branches
+    out = np.zeros((visits + (branches - 1) * depth, branches), dtype=x.dtype)
+    for i in range(branches):
+        out[i * depth:i * depth + visits, i] = x[i::branches]
+    return out.ravel()
+
+
+def convolutional_deinterleave(y: np.ndarray, branches: int, depth: int) -> np.ndarray:
+    """Undo convolutional_interleave using its known startup delays and flush tail."""
+    if branches < 1 or depth < 0 or y.ndim != 1 or y.size % branches or y.size // branches < (branches - 1) * depth:
+        raise ValueError("invalid convolutional interleaver stream or geometry")
+    visits = y.size // branches - (branches - 1) * depth
+    out = np.empty((visits, branches), dtype=y.dtype)
+    for i in range(branches):
+        out[:, i] = y.reshape(-1, branches)[i * depth:i * depth + visits, i]
+    return out.ravel()
+
+
 def _perm(kind: str, rows: int, cols: int, seed: int | None) -> np.ndarray:
     if kind == "diagonal":
         return diagonal_perm(rows, cols)

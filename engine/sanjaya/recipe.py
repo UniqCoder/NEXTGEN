@@ -5,11 +5,14 @@ from pydantic import BaseModel, Field as F
 
 
 class Modulation(BaseModel):
-    scheme: Literal["bpsk", "qpsk", "8psk", "16qam", "64qam"]
+    scheme: Literal["bpsk", "qpsk", "8psk", "16qam", "64qam", "fsk2", "fsk4", "fsk8"]
     mapping: Literal["gray"] = "gray"
     symbol_rate_hz: float = F(gt=0)
     pulse: Literal["rrc"] = "rrc"
     rolloff: float = F(ge=0.0, le=1.0)
+    # FSK only (non-coherent tone bank, no pulse shaping): spacing between adjacent tones, Hz.
+    # rolloff/pulse are unused for fsk* schemes (kept required for schema simplicity; pass 0.0/"rrc").
+    fsk_tone_spacing_hz: float | None = F(default=None, gt=0)
 
 
 class ConvCode(BaseModel):

@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import { Mark } from '../components/ui'
 import { Undecided } from '../components/Step'
 import { exportJSON } from '../components/Palette'
-import { FRAME, SCENARIO, downloadReceiver, fmtBytes } from '../lib/engine'
+import { FRAME, SCENARIO, downloadJobCertificate, downloadReceiver, fmtBytes } from '../lib/engine'
 import { go } from '../lib/router'
 import { useApp } from '../lib/store'
 
@@ -22,7 +22,7 @@ export function Certificate() {
       <div className="empty">
         <span className="label">08 — Learn · Decode certificate</span>
         <h2>No certificate yet.</h2>
-        <p className="dim">A certificate is issued only after the proof passes: the decoded bits are re-synthesised, subtracted, and the residual tests as white noise.</p>
+        <p className="dim">A certificate is issued only after the proof passes: the decoded bits are resynthesised, subtracted, and the residual tests as white noise.</p>
         <button className="btn primary" onClick={() => go('/proof')}>Go to the proof step</button>
       </div>
     )
@@ -40,8 +40,10 @@ export function Certificate() {
         <button className="btn ghost sm" onClick={() => go('/proof')}>← Proof</button>
         <span className="small dim" style={{ marginRight: 'auto' }}>Exports for designated sensors</span>
         <button className="btn sm" onClick={() => print()}>PDF</button>
-        <button className="btn sm" onClick={() => exportJSON()}>JSON report</button>
+        <button className="btn sm" onClick={() => exportJSON()}>Analysis report (.json)</button>
+        {SCENARIO.view.source !== 'demo' && <button className="btn sm" onClick={() => void downloadJobCertificate()}>Signed certificate (.json)</button>}
         <button className="btn sm" onClick={() => exportJSON('sigmf')}>SigMF</button>
+        {SCENARIO.view.source !== 'demo' && <button className="btn sm" onClick={() => go('/verify')}>Verify certificate</button>}
         {SCENARIO.view.compiler?.passed && <button className="btn sm primary" onClick={() => void downloadReceiver()}>Receiver (.zip)</button>}
         <button className="btn sm" onClick={() => go('/frames')}>Frames · schema</button>
       </div>
@@ -63,7 +65,7 @@ export function Certificate() {
           <span>Size</span><span className="mono">{fmtBytes(SCENARIO.file.size)} · {SCENARIO.file.size.toLocaleString('en-IN')} bytes</span>
           <span>Format</span><span className="mono">{SCENARIO.text.certFormat}</span>
           <span>SHA-256</span><span className="mono hash">{SCENARIO.file.sha256}</span>
-          <span>Centre freq.</span><span className="mono">{fcHz ? (fcHz / 1e6).toFixed(4) + ' MHz (analyst-entered)' : 'not provided'}</span>
+          <span>Centre freq.</span><span className="mono">{fcHz ? (fcHz / 1e6).toFixed(4) + ' MHz (analyst entered)' : 'not provided'}</span>
         </L>
 
         <L className="cert-sec"><span className="label">Proof</span></L>
@@ -77,20 +79,21 @@ export function Certificate() {
         <L className="cert-sec"><span className="label">Signal parameters</span></L>
         <L>
           <table className="cert-table">
-            <thead><tr><th>Parameter</th><th>Value</th><th>Method</th><th>Confidence</th><th>Evidence</th></tr></thead>
+            <thead><tr><th>Parameter</th><th>Value</th><th>Method</th><th>Evidence score</th><th>Evidence</th></tr></thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p.key}>
                   <td>{p.label}</td>
                   <td className="mono">{p.value}{p.unit ? ' ' + p.unit : ''}</td>
                   <td className="mono">{p.method}</td>
-                  <td className="mono">{p.conf !== null ? p.conf.toFixed(2) : '—'}{p.set ? ` · set ${p.set}` : ''}</td>
+                  <td className="mono">{p.conf !== null ? p.conf.toFixed(2) : '—'}{p.set ? ` · candidates ${p.set}` : ''}</td>
                   <td className="ev">{p.evidence}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </L>
+        <L className="small dim">Evidence scores and candidate sets are uncalibrated; no 95 % coverage claim has been validated.</L>
 
         <L className="cert-sec"><span className="label">Frame structure · header and payload</span></L>
         <L className="framebar">
@@ -128,7 +131,7 @@ export function Certificate() {
             <span>Verify</span><span className="mono">sanjaya verify {SCENARIO.file.path || SCENARIO.file.name} {SCENARIO.cert.id}.json</span>
           </div>
         </L>
-        <L className="small dim no-print">Or verify without a terminal: <a href="#/verify">drop this certificate and the recording</a> for an independent, from-scratch re-check.</L>
+        <L className="small dim no-print">Or verify without a terminal: <a href="#/verify">drop this certificate and the recording</a> for an independent, from scratch recheck.</L>
         {SCENARIO.view.source === 'demo' && <L className="cert-foot mono">Preview: signature fields are placeholders until the engine signs certificates.</L>}
       </article>
     </div>

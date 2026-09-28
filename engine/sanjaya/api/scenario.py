@@ -95,8 +95,7 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
     src = "search" if log else "supplied recipe"
     params = {
         "content": P("content", "Signal type", "Digital data", "blind", 0,
-                     "Decoded to CRC-valid frames and certified by the layered proof, so the content is digital data. "
-                     "(The standalone voice / CW / noise triage gate arrives with R-15.)", conf=1.0),
+                     "Decoded to CRC-valid frames and certified by the layered proof, so the content is digital data.", conf=1.0),
         "fs": P("fs", "Sampling frequency", f"{fs:,.0f}".replace(",", " "), "blind", 1,
                 f"From the file header ({meta['source_fs']}). The symbol clock measured against it gives a recorder clock offset of {fe.clock_ppm:+.1f} ppm.", unit="Hz"),
         "baud": P("baud", "Symbol rate", f"{rs_hz:,.3f}".replace(",", " "), "blind", 1,
@@ -178,15 +177,12 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
         spec, _ = dual_spectrum(block_deinterleave(d, rws, Nc // rws), min(fec.K, 7))
         spec[0] = -1
         prof.append({"p": rws, "v": round(float(1 - max(0.0, spec.max())), 3)})
-    fam = [{"name": "Convolutional · Viterbi", "found": f"K={fec.K} r½ ({', '.join(fec.generators_octal)})₈", "method": "blind", "score": round(float(1 - coding.stats.get('K1_unsat_frac', 0.5) * 2), 2)},
-           {"name": "Reed–Solomon", "found": "Not in the v1 hypothesis set (arrives at G3)", "method": "blind", "score": 0},
-           {"name": "Concatenated", "found": "Not in the v1 hypothesis set (arrives at G3)", "method": "blind", "score": 0},
-           {"name": "LDPC", "found": "Not in the v1 hypothesis set (catalogue at G4)", "method": "library", "score": 0}]
+    fam = [{"name": "Convolutional · Viterbi", "found": f"K={fec.K} r½ ({', '.join(fec.generators_octal)})₈", "method": "blind", "score": round(float(1 - coding.stats.get('K1_unsat_frac', 0.5) * 2), 2)}]
     ilv = [{"name": "Block", "score": round(1 - min(p["v"] for p in prof), 2) if prof else 1.0, "method": "blind",
             "note": "no interleaver" if il.rows in (1, il.rows * il.cols) else f"{il.rows} × {il.cols} (dual-code bias)"},
-           {"name": "Convolutional", "score": 0, "method": "blind", "note": "not in the v1 hypothesis set"},
-           {"name": "Diagonal", "score": 0, "method": "blind", "note": "not in the v1 hypothesis set"},
-           {"name": "Pseudo-random", "score": 0, "method": "library", "note": "not in the v1 hypothesis set"}]
+           {"name": "Convolutional", "score": 0, "method": "blind", "note": "Not evaluated by this blind decoder"},
+           {"name": "Diagonal", "score": 0, "method": "blind", "note": "Not evaluated by this blind decoder"},
+           {"name": "Pseudo-random", "score": 0, "method": "library", "note": "Not evaluated by this blind decoder"}]
 
     rp = phy.stats
     row_start = int(np.clip(np.floor(t0f * ROWS), 0, ROWS - 1))
@@ -239,7 +235,7 @@ def build(x: np.ndarray, fs: float, recipe: Recipe, body, log, meta: dict) -> di
         "decodeLine": f"{n_ok} of {n_fr} frames pass their CRC", "ilRows": il.rows, "ilCols": il.cols,
         "ilLabel": "None" if il_none else f"Block {il.rows} × {il.cols}", "chain": chain,
         "genomeE1": {"label": f"E1 · {mo.scheme.upper()} {fmt_sp(rs_hz)} Bd", "name": "No named standard",
-                     "note": "the standards table (D5) arrives in a later build"},
+                     "note": "No supported standard matched the measured signal"},
         "genomeFs": {"title": "Sampling frequency · " + meta["source_fs"], "value": fmt_sp(fs),
                      "note": f"symbol clock vs file clock: {fe.clock_ppm:+.1f} ppm"},
     }

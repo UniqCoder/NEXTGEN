@@ -258,7 +258,7 @@ def structure_layer(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict
             if stats["S3_counter_frac"] < TH["s3_min_frac"]:
                 fails.append("S3 counters do not increment")
     stats["S4_scrambler_certified"] = float(not fails and p_s2 <= TH["s2_max_p"])
-    return LayerVerdict(layer="structure", verdict="fail" if fails else "pass", reason="; ".join(fails + nd) or None,
+    return LayerVerdict(layer="structure", verdict="fail" if fails else "not_determinable" if nd else "pass", reason="; ".join(fails + nd) or None,
                         stats=stats, thresholds={"S1_min_frac": TH["s1_min_frac"], "S2_max_p": TH["s2_max_p"], "S3_min_frac": TH["s3_min_frac"]},
                         calibration_id=CALIBRATION_ID)
 

@@ -132,7 +132,15 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
     na = asm_symbols(recipe).size
     body = fe.frames[:, na:]
     llr = llr_symbols(recipe.modulation.scheme, body, fe.amp, fe.sigma2)
-    llr *= (1.0 - 2.0 * scrambler_seq(recipe, llr.shape[1]))[None].astype(np.float32)
+    return decode_llr(recipe, llr)
+
+
+def decode_llr(recipe: Recipe, llr: np.ndarray) -> Unwrapped:
+    """FEC decode + de-interleave + parse, given per-frame code-bit LLRs (post-descramble is applied
+    here). Shared by the coherent PSK/QAM front end (unwrap, above) and the FSK front end (fsk.py) —
+    everything past the modulation-specific demapper is identical regardless of PHY."""
+    check_geometry(recipe)
+    llr = llr * (1.0 - 2.0 * scrambler_seq(recipe, llr.shape[1]))[None].astype(np.float32)
     il, fec = recipe.interleaver, recipe.fec
     llr = deinterleave(llr, il.kind, il.rows, il.cols, il.seed)
     fec_ok = None
@@ -154,7 +162,8 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
     else:
         u = viterbi_soft(llr, fec.K, tuple(fec.generators_octal), fec.terminated)
         info = u[:, : u.shape[1] - tail_bits(recipe)]
-    reenc = deinterleave(encode_frames(recipe, info)["interleaved"], il.kind, il.rows, il.cols, il.seed)
+    il2 = recipe.interleaver
+    reenc = deinterleave(encode_frames(recipe, info, _fsk_body_only=True)["interleaved"], il2.kind, il2.rows, il2.cols, il2.seed)
     fields, crc_ok = parse_fields(recipe, info)
     return Unwrapped(llr, (llr < 0).astype(np.uint8), info, reenc, fields, crc_ok, fec_ok)
 

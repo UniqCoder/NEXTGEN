@@ -49,7 +49,7 @@ export const SCENARIO = {
   forensics: [
     { k: 'Container', v: 'None (headerless)', conf: 1, method: 'blind' as Method, note: 'No RIFF / SigMF signature in first 4 KiB' },
     { k: 'Sample type', v: 'complex int16', conf: 0.97, method: 'blind' as Method, note: 'int16: kurtosis 3.01, 0 clipped · float32: 71 % NaN/denormal' },
-    { k: 'Endianness', v: 'little', conf: 0.99, method: 'blind' as Method, note: 'Byte-swapped reading gives flat spectrum' },
+    { k: 'Endianness', v: 'little', conf: 0.99, method: 'blind' as Method, note: 'Byte swapped reading gives flat spectrum' },
     { k: 'I/Q order', v: 'I first', conf: 0.93, method: 'blind' as Method, note: 'Q-first mirrors CW carrier to +17.5 kHz' },
     { k: 'DC offset', v: '−41.2 dBFS · removed', conf: null, method: 'blind' as Method, note: '' },
     { k: 'IQ imbalance', v: '0.21 dB / 0.8° · corrected', conf: null, method: 'blind' as Method, note: 'Image rejection 38 dB → 61 dB' },
@@ -92,7 +92,7 @@ export const SCENARIO = {
   },
   text: {
     evm: 'EVM 6.1 % · MER 24.3 dB',
-    certFormat: 'Raw IQ · complex int16 · little-endian · I first (inferred)',
+    certFormat: 'Raw IQ · complex int16 · little endian · I first (inferred)',
     fecLine: 'Concatenated code: RS outer, block interleaver, convolutional inner · 41 symbol errors corrected · 0 failures',
     scrText: '1 + x¹⁴ + x¹⁵ · seed 100101010000000', scrNote: 'Recovered blind with Berlekamp–Massey',
     phaseText: '90° rotation · Gray mapping', phaseNote: 'All 4 rotations decoded; only 90° satisfies the code',
@@ -100,44 +100,44 @@ export const SCENARIO = {
     rankAxis: 'NORM. RANK', rankNote: 'rank deficiency 42 % · block',
     mod: 'QPSK', baud: '2400', baudSpaced: '2 400', at: '+3.5 kHz', snr: '14', others: 'Three weaker emitters share the band',
     obw: 'OBW 3.24 kHz · −26 dB', format: 'complex int16 · 48 kHz', heroCap: '48 kHz · 251 s', sigmfDtype: 'ci16_le',
-    frameLine: '192-bit frames · sync 0xFAF320 · CRC-16/CCITT verified on 95 / 95 complete frames · payload high-entropy (not decrypted).',
+    frameLine: '192 bit frames · sync 0xFAF320 · CRC-16/CCITT verified on 95 / 95 complete frames · payload high entropy (not decrypted).',
     codeKind: 'concatenated code', ilKind: 'block interleaver', decodeLine: '96 of 96 codewords decode', ilRows: 48, ilCols: 32,
     ilLabel: 'Block 48 × 32',
     chain: [
       { role: 'Input', n: 'Demodulated bits', v: 'soft bits · 4 phase rotations tried', m: 'blind' },
       { role: 'Error correction · inner', n: 'Viterbi', v: 'Conv. K=7 r½ (171,133)₈', m: 'blind' },
-      { role: 'De-interleaving', n: 'Block de-interleave', v: '48 × 32', m: 'blind' },
+      { role: 'Deinterleaving', n: 'Block deinterleave', v: '48 × 32', m: 'blind' },
       { role: 'Error correction · outer', n: 'Reed–Solomon', v: 'RS(255,223) GF(2⁸)', m: 'library' },
       { role: 'Descrambling', n: 'Descramble', v: '1 + x¹⁴ + x¹⁵', m: 'blind' },
-      { role: 'Output', n: 'Clean bit stream', v: '192-bit frames', m: 'blind' },
+      { role: 'Output', n: 'Clean bit stream', v: '192 bit frames', m: 'blind' },
     ] as { n: string; v: string; m: Method; role: string }[],
     genomeE1: { label: 'E1 · QPSK 2400 Bd', name: 'No named standard', note: 'closest MIL-STD-188-110A · 0.22 (it uses 8PSK)' },
-    genomeFs: { title: 'Sampling frequency · back-solved', value: '48 000', note: 'RTTY clock 49.99984 Bd ⇒ clock error −3.2 ppm' },
+    genomeFs: { title: 'Sampling frequency · backsolved', value: '48 000', note: 'RTTY clock 49.99984 Bd ⇒ clock error −3.2 ppm' },
   },
 }
 
 const P = (p: Param) => (SCENARIO.params[p.key] = p)
 P({ key: 'content', label: 'Signal type', value: 'Digital data', method: 'blind', conf: 0.96, stage: 0,
-  evidence: 'Steady 3.2 kHz occupied band with a symbol-rate line at 2 400 Hz; level varies about 4 % frame to frame (speech varies by more than 30 %). Not voice, not a lone carrier, not noise - so the decode chain runs.' })
+  evidence: 'Steady 3.2 kHz occupied band with a symbol rate line at 2 400 Hz; level varies about 4 % frame to frame (speech varies by more than 30 %). Not voice, not a lone carrier, not noise - so the decode chain runs.' })
 P({ key: 'fs', label: 'Sampling frequency', value: '48 000', unit: 'Hz', method: 'blind', conf: 0.99, stage: 1,
-  evidence: 'No header. Back-solved from the RTTY symbol clock (49.99984 Bd vs nominal 50) and the anti-alias roll-off at ±22.5 kHz. Clock error −3.2 ppm.' })
+  evidence: 'No header. Backsolved from the RTTY symbol clock (49.99984 Bd vs nominal 50) and the anti-alias roll-off at ±22.5 kHz. Clock error −3.2 ppm.' })
 P({ key: 'baud', label: 'Symbol rate', value: '2 400.0', unit: 'Bd', method: 'blind', conf: 0.99, stage: 1,
   evidence: 'Cyclostationary line at 2 400.02 Hz in |x|² spectrum, 23 dB above floor. Oerder–Meyr timing converges in 380 symbols.' })
 P({ key: 'modulation', label: 'Modulation', value: 'QPSK', method: 'blind', conf: 0.91, stage: 2,
   cands: [{ v: 'QPSK', p: 0.91 }, { v: '8PSK', p: 0.07 }, { v: 'OQPSK', p: 0.02 }], set: '{QPSK}',
-  evidence: 'Fourth-power line at 4·Δf, none at 8·Δf. Cumulants C40 = −0.98, C42 = −1.01 (QPSK theory −1, −1). Decode-fit EVM 6.1 %.' })
+  evidence: 'Fourth power line at 4·Δf, none at 8·Δf. Cumulants C40 = −0.98, C42 = −1.01 (QPSK theory −1, −1). Decode fit EVM 6.1 %.' })
 P({ key: 'fec', label: 'FEC', value: 'RS(255,223) ∘ CC K=7 r½', method: 'blind', conf: 0.96, stage: 4,
   evidence: 'Inner: dual-code syndrome weight minimum at (171,133)₈, 0.02 vs 0.50 random. Outer: RS(255,223) GF(2⁸) matched from library, 96/96 codewords decode, 41 symbols corrected.' })
 P({ key: 'interleaver', label: 'Interleaving', value: 'Block 48 × 32', method: 'blind', conf: 0.94, stage: 4,
-  evidence: 'Rank profile of the Viterbi output dips at period 48 (normalised rank 0.58) and its multiple 96. Depth 32 from the second-order rank profile.' })
+  evidence: 'Rank profile of the Viterbi output dips at period 48 (normalised rank 0.58) and its multiple 96. Depth 32 from the second order rank profile.' })
 P({ key: 'scrambler', label: 'Scrambler', value: '1 + x¹⁴ + x¹⁵', method: 'blind', conf: 0.9, stage: 4,
-  evidence: 'Berlekamp–Massey on known-zero padding: linear complexity 15. Seed 100101010000000. Additive (synchronous).' })
+  evidence: 'Berlekamp–Massey on known zero padding: linear complexity 15. Seed 100101010000000. Additive (synchronous).' })
 P({ key: 'snr', label: 'SNR', value: '14.2', unit: 'dB', method: 'blind', conf: null, stage: 1,
-  evidence: 'M2M4 estimator on matched-filter output; cross-checked with in-band vs out-of-band PSD (14.6 dB).' })
+  evidence: 'M2M4 estimator on matched filter output; cross-checked with in band vs out of band PSD (14.6 dB).' })
 P({ key: 'bw', label: 'Occupied bandwidth', value: '3.24', unit: 'kHz', method: 'blind', conf: null, stage: 1,
   evidence: '−26 dB points of the averaged PSD. Consistent with RRC roll-off α = 0.35 at 2 400 Bd.' })
 P({ key: 'cfo', label: 'Carrier offset', value: '+3 512.4', unit: 'Hz', method: 'blind', conf: null, stage: 1,
-  evidence: 'Fourth-power spectral line at 14 049.6 Hz ÷ 4. Costas loop residual < 0.4 Hz.' })
+  evidence: 'Fourth power spectral line at 14 049.6 Hz ÷ 4. Costas loop residual < 0.4 Hz.' })
 P({ key: 'fc', label: 'Centre frequency', value: 'Unknown', method: 'manual', conf: null, stage: 0,
   evidence: 'Raw IQ without SigMF metadata carries no RF frequency. Enter it to see absolute frequencies and the band (HF / VHF / UHF).' })
 
@@ -334,7 +334,7 @@ export const INTERLEAVER_TYPES = [
   { name: 'Block', score: 0.94, method: 'blind' as Method, note: 'rank dip at 48, 96' },
   { name: 'Convolutional', score: 0.03, method: 'blind' as Method, note: 'no staircase in rank vs delay' },
   { name: 'Diagonal', score: 0.02, method: 'blind' as Method, note: 'no diagonal dependence' },
-  { name: 'Pseudo-random', score: 0.01, method: 'library' as Method, note: '14 known PN permutations tried' },
+  { name: 'Pseudo random', score: 0.01, method: 'library' as Method, note: '14 known PN permutations tried' },
 ]
 
 export const FEC_FAMILIES = [
@@ -377,7 +377,7 @@ export const GENOME: Standard[] = [
   { name: 'PSK31', band: 'HF', fam: 'PSK', baud: '31.25', shape: 'BPSK', bw: 60 },
   { name: 'FT8', band: 'HF', fam: 'FSK', baud: '6.25', shape: '8-GFSK', tones: 8, bw: 50 },
   { name: 'WEFAX', band: 'HF', fam: 'FSK', baud: '—', shape: 'FM ±400 Hz', tones: 2, bw: 900 },
-  { name: 'CW (Morse)', band: 'HF/VHF', fam: 'CW', baud: '—', shape: 'on-off keyed carrier', bw: 100 },
+  { name: 'CW (Morse)', band: 'HF/VHF', fam: 'CW', baud: '—', shape: 'on off keyed carrier', bw: 100 },
   { name: 'AIS', band: 'VHF', fam: 'MSK', baud: '9600', shape: 'GMSK BT 0.4', bw: 14000 },
   { name: 'ACARS', band: 'VHF', fam: 'MSK', baud: '2400', shape: 'AM-MSK', bw: 5000 },
   { name: 'APRS / AX.25', band: 'VHF', fam: 'FSK', baud: '1200', shape: 'AFSK 1200/2200', tones: 2, bw: 3000 },
@@ -416,6 +416,6 @@ export const RECENT = [
   { name: 'sanjaya-gen_0042.iq', size: 48_234_496, fmt: 'Raw IQ · c16 LE', when: '26 Sep 14:12', verdict: 'proven', note: 'QPSK · RS∘CC · Block 48×32' },
   { name: 'kiwi_navtex_518k_0914.wav', size: 11_520_044, fmt: 'WAV · 12 kHz · real', when: '24 Sep 09:41', verdict: 'proven', note: 'NAVTEX · SITOR-B' },
   { name: 'kiwi_s4285_8416k_0915.wav', size: 92_160_044, fmt: 'WAV · 2ch → IQ', when: '23 Sep 21:07', verdict: 'proven', note: 'STANAG 4285 · 8PSK' },
-  { name: 'uhf_433_burst_0916.iq', size: 201_326_592, fmt: 'Raw IQ · cf32', when: '22 Sep 18:30', verdict: 'partial', note: 'payload high-entropy' },
+  { name: 'uhf_433_burst_0916.iq', size: 201_326_592, fmt: 'Raw IQ · cf32', when: '22 Sep 18:30', verdict: 'partial', note: 'payload high entropy' },
   { name: 'unknown_0911_2203.iq', size: 16_777_216, fmt: 'Raw IQ · c8', when: '19 Sep 22:03', verdict: 'novel', note: 'LFM chirp · no class' },
 ]

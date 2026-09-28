@@ -13,9 +13,9 @@
 
   /* Bone: text */
   --bone-1: #e9e5da;
-  --bone-2: #a29d90;
-  --bone-3: #6b675e;
-  --bone-4: #4b4841;
+  --bone-2: #bdb7aa;
+  --bone-3: #958f82;
+  --bone-4: #716c62;
 
   /* The one living colour */
   --signal: #ff8a1f;
@@ -37,17 +37,17 @@
   /* Type */
   --f-sans: 'Hanken Grotesk Variable', 'Hanken Grotesk', ui-sans-serif, sans-serif;
   --f-mono: 'Martian Mono', ui-monospace, monospace;
-  --t-9: 9.5px;
-  --t-10: 10.5px;
-  --t-11: 11px;
-  --t-12: 12px;
-  --t-13: 13px;
-  --t-15: 15px;
+  --t-9: 11px;
+  --t-10: 12px;
+  --t-11: 12.5px;
+  --t-12: 13px;
+  --t-13: 14px;
+  --t-15: 16px;
   --t-20: 20px;
   --t-28: 28px;
   --t-44: 44px;
   --t-72: 72px;
-  --track-label: 0.14em;
+  --track-label: 0.08em;
 
   /* Space: 4px grid */
   --s-1: 4px;
@@ -80,8 +80,8 @@
   --z-palette: 40;
   --z-toast: 50;
 
-  --titlebar-h: 40px;
-  --statusbar-h: 26px;
+  --titlebar-h: 46px;
+  --statusbar-h: 30px;
 
   color-scheme: dark;
 }
@@ -99,8 +99,8 @@
   --line-3: #a39c8b;
   --bone-1: #161512;
   --bone-2: #4d4a42;
-  --bone-3: #7b766b;
-  --bone-4: #a09a8c;
+  --bone-3: #625e55;
+  --bone-4: #787267;
   --signal: #c85f00;
   --signal-2: #a34d00;
   --signal-ink: #fff8ef;

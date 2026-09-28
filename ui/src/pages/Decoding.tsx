@@ -55,7 +55,7 @@ function DecodingReady() {
           </div>
         </section>
 
-        <Panel title="De-interleaving" alt="which interleaver, and its size" style={{ gridArea: 'il' }}
+        <Panel title="Deinterleaving" alt="which interleaver, and its size" style={{ gridArea: 'il' }}
           tools={expert ? (
             <span className="row" style={{ gap: 6 }}>
               <Scrub k="ROWS" value={rows} min={2} max={256} onChange={setRows} />
@@ -65,7 +65,7 @@ function DecodingReady() {
           ) : <span className="mono small dim">{T.ilLabel}</span>}>
           <div className="il">
             <div className="il-types">
-              {INTERLEAVER_TYPES.map((t) => (
+              {INTERLEAVER_TYPES.filter((t) => SCENARIO.view.source === 'demo' || t.score > 0.5).map((t) => (
                 <button key={t.name} className={'il-type' + (t.name === ilType ? ' on' : '') + (t.score > 0.5 ? ' found' : '')}
                   disabled={!expert && t.name !== ilType} onClick={() => setIlType(t.name)} aria-pressed={t.name === ilType}
                   title={expert ? 'Select to force this interleaver type' : t.note}>
@@ -109,7 +109,9 @@ function DecodingReady() {
               ))}
             </tbody>
           </table>
-          <p className="small dim" style={{ marginTop: 12 }}>LDPC was searched for (n ≤ 1024 and library matrices) and is not present. It is reported as absent, not guessed.</p>
+          <p className="small dim" style={{ marginTop: 12 }}>{SCENARIO.view.source === 'demo'
+            ? 'This preview shows the candidate ranking for the generated example.'
+            : 'This recording passed the convolutional code checks. Other FEC families were not evaluated by the blind search.'}</p>
         </Panel>
 
         <section className="strip" style={{ gridArea: 'strip' }}>

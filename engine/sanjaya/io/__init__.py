@@ -1,10 +1,12 @@
-"""L1 I/O. Schema-0.1 slice: SigMF (cf32_le, ci16_le) and raw interleaved IQ with an explicit dtype.
-WAV families, dtype sniffing and forensics (R-01) arrive with WP01."""
+"""L1 I/O: SigMF, raw interleaved IQ with an explicit dtype, and PCM/float WAV.
+The full R-01 container and dtype matrix remains future work."""
 import hashlib, json
 from pathlib import Path
 import numpy as np
 
-RAW = {"cf32_le": ("<f4", 1.0), "ci16_le": ("<i2", 1 / 32768), "ci8": ("i1", 1 / 128), "cu8": ("u1", None)}
+RAW = {"cf32_le": ("<f4", 1.0), "cf32_be": (">f4", 1.0),
+       "ci16_le": ("<i2", 1 / 32768), "ci16_be": (">i2", 1 / 32768),
+       "ci8": ("i1", 1 / 128), "cu8": ("u1", None)}
 
 
 def _to_complex(raw: np.ndarray, dtype: str) -> np.ndarray:
@@ -19,8 +21,12 @@ def _to_complex(raw: np.ndarray, dtype: str) -> np.ndarray:
 def read_raw(path: str | Path, dtype: str) -> np.ndarray:
     if dtype not in RAW:
         raise ValueError(f"unsupported dtype {dtype}; supported: {sorted(RAW)}")
-    raw = np.fromfile(path, RAW[dtype][0])
-    return _to_complex(raw[: raw.size // 2 * 2], dtype)
+    scalar = np.dtype(RAW[dtype][0])
+    size = Path(path).stat().st_size
+    if size % (2 * scalar.itemsize):
+        raise ValueError(f"raw IQ byte length {size} is not a whole number of {dtype} I/Q pairs")
+    raw = np.fromfile(path, scalar)
+    return _to_complex(raw, dtype)
 
 
 def sigmf_paths(path: str | Path) -> tuple[Path, Path]:

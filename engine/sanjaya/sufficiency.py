@@ -1,6 +1,6 @@
 """USP 3a, the Data-Sufficiency Engine v0: every decision of the blind search keeps an evidence ledger entry
-(decided or not, the evidence, and what limits it), so a short capture is answered with "record N more
-seconds" instead of silence or a guess, and "more data will not help" is said when that is the truth.
+(decided or not, the evidence, and what limits it), so a short capture with a measured frame period can
+receive a recording-length estimate. Without that evidence, the ledger abstains from a numeric estimate.
 
 Prediction for the coding layer (the decision short captures lose first): frame differences cancel the
 scrambler, so the dual-code check bias b is fixed by the code and the channel while the noise level of the
@@ -91,6 +91,11 @@ class Ledger:
             tail = (f"; the coding layer alone would have decided from {code['min_s'][0]:.2f} s (P50) / "
                     f"{code['min_s'][1]:.2f} s (P90)") if code else ""
             return "sufficient", f"Sufficient: every decision made from {self.have_s:.2f} s{tail}."
+        blocker = next((e for e in open_ if e["limit"] in ("channel", "scope", "structure", "signal")), None)
+        if blocker:
+            why = {"channel": "the channel prevents a reliable decision", "scope": "this signal is outside the supported blind recipe family",
+                   "structure": "no supported frame structure was found", "signal": "no emission was found"}[blocker["limit"]]
+            return "not_data_limited", f"{blocker['decision']} undecided: {why}. Recording longer alone is not a validated fix."
         data = [e for e in open_ if e["limit"] == "data" and e["need_s"]]
         if data:                                               # more recording is predicted to settle it
             first = max(data, key=lambda e: e["need_s"][0])

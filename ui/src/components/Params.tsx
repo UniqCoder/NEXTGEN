@@ -53,11 +53,11 @@ export function Params({ keys }: { keys: string[] }) {
                           <span className="mono dim">{c.p.toFixed(2)}</span>
                         </div>
                       ))}
-                      <div className="small dim" style={{ marginTop: 4 }}>95 % prediction set: <span className="mono">{p.set}</span></div>
+                      {p.set && <div className="small dim" style={{ marginTop: 4 }}>Candidate set (uncalibrated): <span className="mono">{p.set}</span></div>}
                     </div>
                   )}
                   <p>{p.evidence}</p>
-                  {key === 'modulation' && mode === 'expert' && (
+                  {key === 'modulation' && mode === 'expert' && SCENARIO.view.source === 'demo' && (
                     <div className="row" style={{ marginTop: 10 }}>
                       <span className="small dim">Override</span>
                       <Seg value={override ?? 'auto'} onChange={(v) => setState({ modOverride: v === 'auto' ? null : v })}

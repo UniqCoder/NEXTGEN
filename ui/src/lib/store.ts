@@ -89,7 +89,9 @@ type JobOpts = { fs?: number | null; dtype?: string | null; fc?: number | null; 
 let pending: { file: File; opts: JobOpts } | null = null
 export function setPending(file: File | null, opts: JobOpts = {}) {
   pending = file ? { file, opts } : null
+  ENGINE.job = null
 }
+export const getPending = () => pending
 
 async function settle(run: () => Promise<Awaited<ReturnType<typeof runJob>>>) {
   clear()
@@ -122,6 +124,7 @@ export function runAutopilot() {
 
 /** Run one of the built-in demo recordings (from Ingest's "Recent recordings" list). */
 export function runSampleJob(sample: SampleMeta) {
+  setPending(null)
   void settle(() => runSample(sample, (s) => setState({ stages: s.stages.map((x) => x) as StageStatus[] })))
 }
 
@@ -132,6 +135,8 @@ export async function loadSampleLibrary() {
 
 /** PROVE: re-synthesise, subtract, test residual whiteness. */
 export function prove() {
+  if (state.job === 'running' || state.job === 'undecided' || state.job === 'error' ||
+      (SCENARIO.view.source !== 'demo' && (state.job !== 'done' || SCENARIO.view.verdict !== 'pass'))) return
   clear()
   const wrong = (state.modOverride !== null && state.modOverride !== SCENARIO.params.modulation.value) || SCENARIO.view.verdict === 'fail'
   setStage(6, 'running')

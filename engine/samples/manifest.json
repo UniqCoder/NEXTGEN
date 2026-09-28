@@ -10,7 +10,8 @@
    "cfo_hz": 43.66662774398566,
    "clock_ppm": 0.0
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": true
  },
  {
   "id": "syn-qpsk-k7-48x32-7db",
@@ -23,7 +24,8 @@
    "cfo_hz": -355.77651061687607,
    "clock_ppm": 0.0
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": true
  },
  {
   "id": "syn-qpsk-k7-short-7db",
@@ -36,7 +38,8 @@
    "cfo_hz": -362.439437929451,
    "clock_ppm": 0.0
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": false
  },
  {
   "id": "syn-qpsk-k5-24x64-prbs9",
@@ -49,7 +52,8 @@
    "cfo_hz": -366.19147109895084,
    "clock_ppm": -12
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": true
  },
  {
   "id": "syn-qpsk-k7-noil-blindscr",
@@ -62,7 +66,8 @@
    "cfo_hz": -366.19147109895084,
    "clock_ppm": 5
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": true
  },
  {
   "id": "syn-qpsk-k9-6p37sps",
@@ -75,7 +80,8 @@
    "cfo_hz": -366.19147109895084,
    "clock_ppm": 0.0
   },
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": true
  },
  {
   "id": "stitch-3-sensors",
@@ -100,7 +106,8 @@
    }
   ],
   "source": "SANJAYA-Gen (seeded)",
-  "what": "Each capture is too short alone; pooled they decode, each is proven, and the decoy from another emitter is caught. Sensor clocks, tuning, gains and an inverted spectrum are measured."
+  "what": "Each capture is too short alone; pooled they decode, each is proven, and the decoy from another emitter is caught. Sensor clocks, tuning, gains and an inverted spectrum are measured.",
+  "demo": true
  },
  {
   "id": "syn-noise-only",
@@ -108,7 +115,8 @@
   "kind": "synthetic",
   "file": "syn-noise-only.sigmf-data",
   "what": "Nothing to find: the answer must be 'undecided', never a fabricated recipe.",
-  "source": "SANJAYA-Gen (seeded)"
+  "source": "SANJAYA-Gen (seeded)",
+  "demo": false
  },
  {
   "id": "real-stanag4285-idle",
@@ -117,7 +125,8 @@
   "file": "real-stanag4285-idle.wav",
   "what": "NATO HF serial modem, 1800 Hz carrier in the receiver audio. Off air: HF multipath smears the PSK order past what the v1 receiver (no equalizer) can separate, so this one identifies but stays Undecided.",
   "source": "https://www.sigidwiki.com/wiki/STANAG_4285",
-  "duration_s": 10.0
+  "duration_s": 10.0,
+  "demo": false
  },
  {
   "id": "real-mil188-110a-2400",
@@ -126,7 +135,8 @@
   "file": "real-mil188-110a-2400.wav",
   "what": "US military HF serial-tone modem; a 1.4 s burst. Off air: same HF-multipath limit as STANAG 4285 - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/MIL-STD-188-110_Serial",
-  "duration_s": 1.4
+  "duration_s": 1.4,
+  "demo": false
  },
  {
   "id": "real-hfdl-1200",
@@ -135,7 +145,8 @@
   "file": "real-hfdl-1200.wav",
   "what": "Bursty PSK at 1800 Bd, 1440 Hz carrier. Off air: order separates, but this is ACARS/HFDL's own bursty framing, not the v1 block+ASM+conv model, so no sync marker is found - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/HFDL",
-  "duration_s": 2.8
+  "duration_s": 2.8,
+  "demo": false
  },
  {
   "id": "real-psk31",
@@ -144,7 +155,8 @@
   "file": "real-psk31.wav",
   "what": "A very narrow BPSK signal, about 60 Hz wide. Off air: BPSK itself is blind-decodable now, but PSK31 uses varicode with idle tones, not the v1 recipe model - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/PSK31",
-  "duration_s": 14.9
+  "duration_s": 14.9,
+  "demo": false
  },
  {
   "id": "real-sitor-b",
@@ -153,7 +165,8 @@
   "file": "real-sitor-b.wav",
   "what": "Two-tone FSK, 170 Hz shift; first 60 s of the recording. Off air: FSK coding isn't in the v1 blind hypothesis set yet (PSK/QAM only) - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/NAVTEX",
-  "duration_s": 60.0
+  "duration_s": 60.0,
+  "demo": false
  },
  {
   "id": "real-ale-2g",
@@ -162,6 +175,7 @@
   "file": "real-ale-2g.wav",
   "what": "Eight-tone FSK, MIL-STD-188-141. Off air: same FSK gap as SITOR-B - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/Automatic_Link_Establishment_(ALE)",
-  "duration_s": 29.9
+  "duration_s": 29.9,
+  "demo": false
  }
 ]

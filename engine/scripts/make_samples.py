@@ -82,7 +82,7 @@ def main():
     for sid, name, what, kw in SYNTH:
         x, recipe, truth, _ = generate(**kw)
         data = write_sigmf(OUT / sid, x, recipe.sample_rate_hz, {"sanjaya:generator": truth["generator"]})
-        items.append({"id": sid, "name": name, "kind": "synthetic", "file": data.name, "what": what,
+        items.append({"id": sid, "name": name, "kind": "synthetic", "demo": sid != "syn-qpsk-k7-short-7db", "file": data.name, "what": what,
                       "truth": {k: truth[k] for k in ("esn0_db", "cfo_hz", "clock_ppm")}, "source": "SANJAYA-Gen (seeded)"})
     # one emitter, three sensors (+ a capture of a different emitter with the same sync marker and frame length)
     members = []
@@ -92,13 +92,13 @@ def main():
         data = write_sigmf(OUT / sid, np.conj(x) if inv else x, r.sample_rate_hz, {"sanjaya:generator": "sensor view"})
         members.append({"file": data.name, "label": label})
     items.append({"id": "stitch-3-sensors", "name": "One emitter, three sensors (+1 decoy) · evidence stitching",
-                  "kind": "stitch", "members": members, "source": "SANJAYA-Gen (seeded)",
+                  "kind": "stitch", "demo": True, "members": members, "source": "SANJAYA-Gen (seeded)",
                   "what": "Each capture is too short alone; pooled they decode, each is proven, and the decoy from "
                           "another emitter is caught. Sensor clocks, tuning, gains and an inverted spectrum are measured."})
     rng = np.random.default_rng(0)
     noise = (rng.standard_normal(250_000) + 1j * rng.standard_normal(250_000)).astype(np.complex64) * 0.05
     data = write_sigmf(OUT / "syn-noise-only", noise, 76_800.0, {"sanjaya:generator": "noise"})
-    items.append({"id": "syn-noise-only", "name": "Pure noise", "kind": "synthetic", "file": data.name,
+    items.append({"id": "syn-noise-only", "name": "Pure noise", "kind": "synthetic", "demo": False, "file": data.name,
                   "what": "Nothing to find: the answer must be 'undecided', never a fabricated recipe.", "source": "SANJAYA-Gen (seeded)"})
 
     import soundfile as sf                                          # build-time only (MP3 decoding)
@@ -112,7 +112,7 @@ def main():
         y = (y / (np.max(np.abs(y)) + 1e-12) * 0.7 * 32767).astype(np.int16)
         out = OUT / f"{sid}.wav"
         wavfile.write(out, 12000, y)
-        items.append({"id": sid, "name": name, "kind": "real", "file": out.name, "what": what,
+        items.append({"id": sid, "name": name, "kind": "real", "demo": False, "file": out.name, "what": what,
                       "source": WIKI + page, "duration_s": round(len(y) / 12000, 1)})
     (OUT / "manifest.json").write_text(json.dumps(items, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{len(items)} samples written to {OUT}")

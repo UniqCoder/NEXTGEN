@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from sanjaya.gen import generate
 from sanjaya.pipeline import frontend, unwrap
-from sanjaya.proof import prove
+from sanjaya.proof import prove, structure_layer
 from sanjaya.proof import certificate as C
 
 
@@ -34,6 +34,15 @@ def test_right_recipe_passes_every_layer(rec):
     assert [v.verdict for v in prove(x, r)] == ["pass", "pass", "pass"]
 
 
+def test_missing_structure_evidence_cannot_certify(rec):
+    x, r, *_ = rec
+    no_crc = r.model_copy(update={"framing": r.framing.model_copy(update={"crc": None})})
+    fe = frontend(x, no_crc)
+    uw = unwrap(fe, no_crc)
+    assert structure_layer(no_crc, fe, uw).verdict == "not_determinable"
+    assert C.build_body(x, no_crc, "abc").verdict == "fail"
+
+
 @pytest.mark.parametrize("change", [
     {"fec": {"generators_octal": ["133", "171"]}},
     {"interleaver": {"rows": 32, "cols": 48}},
@@ -58,6 +67,14 @@ def test_certificate_signed_verified_and_deterministic(rec):
     assert any("SHA-256" in p for p in C.verify(x, "other-file", cert))
     cert["body"]["layers"][0]["stats"]["T2_resid_to_noise_db"] = 0.0
     assert C.check_signature(cert) == "INVALID"
+
+
+def test_unsigned_certificate_cannot_be_reproduced(rec):
+    x, r, *_ = rec
+    cert = C.sign(C.build_body(x, r, "abc"))
+    cert["signature"] = None
+    cert["status"] = "UNSIGNED"
+    assert any("signature could not be validated" in p for p in C.verify(x, "abc", cert))
 
 
 def test_certificate_lists_undecidable_neighbours(rec):

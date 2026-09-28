@@ -314,20 +314,20 @@ a { color: inherit; }
 .knob { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; cursor: ns-resize; user-select: none; }
 .knob svg { display: block; }
 .knob .knob-v { font-family: var(--f-mono); font-size: var(--t-9); color: var(--bone-2); }
-.knob .kl { font-family: var(--f-mono); font-size: 8.5px; letter-spacing: 0.14em; color: var(--bone-3); text-transform: uppercase; }
+.knob .kl { font-family: var(--f-mono); font-size: var(--t-9); letter-spacing: 0.08em; color: var(--bone-3); text-transform: uppercase; }
 
 /* Tags */
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 18px;
+  min-height: 22px;
   padding: 0 6px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-1);
   font-family: var(--f-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.12em;
+  font-size: var(--t-9);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--bone-2);
   white-space: nowrap;
@@ -360,7 +360,7 @@ a { color: inherit; }
 .plot .ax {
   position: absolute;
   font-family: var(--f-mono);
-  font-size: 8.5px;
+  font-size: var(--t-9);
   color: var(--bone-3);
   pointer-events: none;
   white-space: nowrap;
@@ -369,7 +369,7 @@ a { color: inherit; }
 .plot .ax-title {
   position: absolute;
   font-family: var(--f-mono);
-  font-size: 8.5px;
+  font-size: var(--t-9);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--bone-4);
@@ -449,7 +449,7 @@ a { color: inherit; }
 .table th {
   text-align: left;
   font-family: var(--f-mono);
-  font-size: 8.5px;
+  font-size: var(--t-9);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
   color: var(--bone-3);

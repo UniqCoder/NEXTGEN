@@ -3,17 +3,19 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Panel, Seg } from '../components/ui'
 import { DisplayMenu, Step } from '../components/Step'
 import { Waterfall, type Overlay } from '../components/Waterfall'
-import { Terrain } from '../components/Terrain'
+import { Terrain } from '../components/TerrainLazy'
 import { SCENARIO, gauss, prng } from '../lib/engine'
 import { css, prep, useSize } from '../lib/plot'
 import { go } from '../lib/router'
 import { prove, setState, skipProof, useApp } from '../lib/store'
 
-const HOW = ['Re-encode the decoded bits', 'Re-modulate with the measured parameters', 'Subtract from the recording', 'Test whether what is left is white noise']
+const HOW = ['Reencode the decoded bits', 'Remodulate with the measured parameters', 'Subtract from the recording', 'Test whether what is left is white noise']
 
 export function Proof() {
   const undecided = useApp((s) => s.job === 'undecided')
   if (undecided) return <Step n={5} title="Proof" lede={null} back={{ to: '/frames', label: 'Header & payload' }}>{null}</Step>
+  if (SCENARIO.view.source !== 'demo' && SCENARIO.view.verdict !== 'pass')
+    return <Step n={5} title="Proof" lede="The engine did not certify this recording." back={{ to: '/frames', label: 'Header & payload' }}>{null}</Step>
   return <ProofReady />
 }
 
@@ -30,6 +32,7 @@ function ProofReady() {
   const wrong = override !== null && override !== SCENARIO.params.modulation.value
   const fail = proof === 'fail' || (proof === 'running' && wrong)
   const P = SCENARIO.proof
+  const live = SCENARIO.view.source !== 'demo'
   const e1 = SCENARIO.emitters[0]
   const overlays: Overlay[] = [{
     ...e1, alpha: 1,
@@ -40,7 +43,8 @@ function ProofReady() {
   const lede =
     proof === 'pass' ? <>Proven. The decoded signal accounts for <b>{P.explained} %</b> of the recorded energy, and what is left is white noise.</> :
     proof === 'fail' ? <>Not proven. <b>{override}</b> leaves {(100 - P.failExplained).toFixed(0)} % of the energy unexplained, so that hypothesis is rejected.</> :
-    proof === 'running' ? 'Rebuilding the waveform and subtracting it from the recording…' :
+    proof === 'running' ? (live ? 'Replaying the engine’s completed proof…' : 'Rebuilding the waveform and subtracting it from the recording…') :
+    live ? 'The engine rebuilt the waveform, tested the residual and recorded the verdict. Replay that result here.' :
     'Rebuild the waveform from the decoded bits and subtract it from the recording. If only noise is left, every parameter is proven.'
 
   return (
@@ -111,12 +115,12 @@ function ProofReady() {
             )}
             {proof === 'idle' && (
               <button className="btn primary lg" style={{ width: '100%' }} disabled={!upstream} onClick={prove}>
-                Prove the decode <span className="kbd" style={{ color: 'inherit', borderColor: 'currentColor', opacity: 0.6 }}>P</span>
+                {live ? 'Review engine proof' : 'Prove the decode'} <span className="kbd" style={{ color: 'inherit', borderColor: 'currentColor', opacity: 0.6 }}>P</span>
               </button>
             )}
             {proof === 'fail' && (
               <div className="verdict bad">
-                <p>The loop goes back to <b>Signal</b> and tries the next-best hypothesis.</p>
+                <p>The loop goes back to <b>Signal</b> and tries the next best hypothesis.</p>
                 <div className="row wrap">
                   <button className="btn primary" onClick={() => { setState({ modOverride: null }); prove() }}>Retry with QPSK</button>
                   <button className="btn ghost" onClick={() => go('/signal')}>Back to Signal</button>
@@ -127,7 +131,7 @@ function ProofReady() {
               <div className="verdict good">
                 <span className="tag proven">Proven</span>
                 <p>A signed decode certificate is ready.</p>
-                <button className="btn ghost sm" onClick={prove}>Run again</button>
+                <button className="btn ghost sm" onClick={prove}>Replay animation</button>
               </div>
             )}
             {!upstream && proof === 'idle' && <p className="small dim">Finish the earlier steps first.</p>}

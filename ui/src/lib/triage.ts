@@ -1,5 +1,5 @@
 // Content triage: what kind of transmission is in the file, before the decode chain runs.
-// Front-end preview using spectral features; the engine runs the calibrated version.
+// Front-end preview using spectral features; scores are heuristic and uncalibrated.
 
 export type Content = 'digital' | 'voice' | 'cw' | 'noise'
 export interface Triage { label: Content; conf: number; why: string }
@@ -68,7 +68,7 @@ export function triage(i: Float32Array, q: Float32Array | null): Triage | null {
   const cv = Math.sqrt(energy.reduce((a, b) => a + (b - mE) ** 2, 0) / frames) / (mE || 1e-30)
 
   if (peakDb < 8 || occupied < 0.003) return { label: 'noise', conf: Math.min(0.99, 0.7 + (8 - Math.min(8, peakDb)) / 20), why: `peak only ${peakDb.toFixed(1)} dB above the floor` }
-  if (tonal > 0.6) return { label: 'cw', conf: Math.min(0.99, 0.6 + tonal / 2.5), why: `${(tonal * 100).toFixed(0)} % of signal energy in one narrow line${cv > 0.5 ? '; on-off keying seen' : ''}` }
+  if (tonal > 0.6) return { label: 'cw', conf: Math.min(0.99, 0.6 + tonal / 2.5), why: `${(tonal * 100).toFixed(0)} % of signal energy in one narrow line${cv > 0.5 ? '; on off keying seen' : ''}` }
   // speech: energy and spectral shape change syllable by syllable; data stays steady
   let flux = 0
   for (let f = 1; f < frames; f++) {

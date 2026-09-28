@@ -1,5 +1,7 @@
 # SANJAYA · Plan to a fully working prototype
 
+> Current coverage assessment and revised, evidence-gated completion sequence: [PROTOTYPE_AUDIT.md](PROTOTYPE_AUDIT.md). The status labels and schedule below are the original plan and are not a current claim of completion.
+
 SIH 2026 · PS 26147 · NTRO. Companion to `PRD.md` (the build contract). Status as of 27 Sep 2026.
 
 ---

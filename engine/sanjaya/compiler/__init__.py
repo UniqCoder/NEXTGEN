@@ -124,6 +124,11 @@ def release_gate(recording: Path, x: np.ndarray, recipe: Recipe, src: str, fs: f
 def compile_package(recipe: Recipe, cert: dict, cert_id: str, recording: Path, x: np.ndarray, sha256: str,
                     fs: float | None = None, dtype: str | None = None) -> tuple[bytes | None, dict]:
     """(zip bytes, gate). The zip is None when the gate fails: nothing is released that does not reproduce."""
+    from ..proof.certificate import check_signature
+    body = cert.get("body") or {}
+    if (body.get("verdict") != "pass" or body.get("recipe") != recipe.model_dump(mode="json")
+            or body.get("input_sha256") != sha256 or check_signature(cert) != "valid"):
+        return None, {"passed": False, "error": "recipe lacks a matching, valid signed proof"}
     src = receiver_source(recipe, cert_id)
     gate = release_gate(recording, x, recipe, src, fs, dtype)
     if not gate["passed"]:

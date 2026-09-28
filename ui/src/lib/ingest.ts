@@ -95,7 +95,7 @@ function raw(f: File, v: DataView, sig: ReturnType<typeof parseSigmf>): Ingested
     ...(sig ? [{ k: 'SigMF sidecar', v: `found · ${sig.dtype ?? 'no datatype'}`, conf: 1 } as Finding] : [{ k: 'SigMF sidecar', v: 'not provided', conf: null } as Finding]),
     ...ranked.slice(0, 3).map((h, i) => ({ k: i === 0 ? 'Sample type' : 'Alternative', v: h.name, conf: w[i] / sum, note: h.why })),
     { k: 'Ruled out', v: hyps.filter((h) => !h.ok).map((h) => h.name).join(', ') || 'none', conf: null },
-    { k: 'Sample rate', v: sig?.fs ? sig.fs.toLocaleString('en-IN') + ' Hz (SigMF)' : 'unknown · will be back-solved', conf: sig?.fs ? 1 : null },
+    { k: 'Sample rate', v: sig?.fs ? sig.fs.toLocaleString('en-IN') + ' Hz (SigMF)' : 'unknown · will be backsolved', conf: sig?.fs ? 1 : null },
   ]
   return {
     name: f.name,

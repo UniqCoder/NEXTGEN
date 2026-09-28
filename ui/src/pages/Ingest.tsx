@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { Conf, MethodTag } from '../components/ui'
-import { Terrain } from '../components/Terrain'
+import { Terrain } from '../components/TerrainLazy'
 import { ingest, type Ingested } from '../lib/ingest'
 import { CONTENT_TEXT } from '../lib/triage'
-import { ENGINE, RECENT, SCENARIO, fmtBytes, ping } from '../lib/engine'
+import { ENGINE, HERO_SCENARIO, RECENT, SCENARIO, fmtBytes, ping } from '../lib/engine'
 import { go } from '../lib/router'
 import { getState, loadSampleLibrary, runAutopilot, runSampleJob, setPending, setState, useApp } from '../lib/store'
 import { engineDtype } from '../lib/engine'
@@ -34,6 +34,7 @@ export function Ingest() {
     dropped.current = files.find((f) => !f.name.endsWith('.sigmf-meta')) ?? null
     const meta = files.find((f) => f.name.endsWith('.sigmf-meta'))
     sidecar.current = meta ? await meta.text() : null
+    setPending(dropped.current, { sigmf: sidecar.current })
     setFile(await ingest(files))
     setBusy(false)
   }
@@ -41,16 +42,16 @@ export function Ingest() {
 
   return (
     <div className="ingest">
-      <div className="hero-bg" aria-hidden>
+      <div className="hero-bg">
         <Terrain hero k={0} fail={false} floor={-104} span={44} />
         <div className="hero-fade" />
-        <div className="hero-cap mono">LIVE REPLAY · {SCENARIO.file.name} · {SCENARIO.text.heroCap}</div>
+        <div className="hero-cap mono">DRAG TO TURN · SCROLL TO ZOOM · {HERO_SCENARIO.text.heroCap}</div>
       </div>
       <div className="ingest-inner">
         <section className={'hero-left' + (file ? ' wide' : '')}>
         <span className="step-k">Step 1 of 5 · Recording</span>
         <h1 className="ingest-h">Drop a recording.</h1>
-        <p className="dim ingest-sub">.wav or raw .IQ, from any sensor. SANJAYA recovers the transmitter recipe and proves it, not just a label.</p>
+        <p className="dim ingest-sub">Drop a .wav or .IQ recording. On supported signals, SANJAYA recovers and proves the receiver recipe; otherwise it shows what was measured and why the decode is undecided.</p>
 
         {!file ? (
           <div
@@ -81,12 +82,19 @@ export function Ingest() {
             <input ref={input} type="file" multiple accept={ACCEPT} hidden onChange={(e) => take(e.target.files)} />
           </div>
         ) : (
-          <Forensics f={file} file={dropped.current} sidecar={sidecar.current} onReset={() => setFile(null)} onRun={autopilot} />
+          <Forensics f={file} file={dropped.current} sidecar={sidecar.current} onReset={() => { setPending(null); setFile(null) }} onRun={autopilot} />
         )}
         </section>
 
+        <section className="usp-grid" aria-label="What SANJAYA demonstrates">
+          <div><b>01 · Proof of decode</b><p>Rebuild the waveform, test the residual, and issue a signed certificate that can be checked again.</p></div>
+          <div><b>02 · Blind coding search</b><p>Recover the convolutional code, block interleaver and frame fields on supported BPSK/QPSK captures.</p></div>
+          <div><b>03 · Enough data?</b><p>Explain undecided results and show when synthetic multisensor captures can be pooled.</p></div>
+          <div><b>04 · Receiver export</b><p>Package a receiver only after it reproduces the decoded bits on the source recording.</p></div>
+        </section>
+
         <div className="recent">
-          <h2 className="sub-h">{samples.length ? 'Sample library' : 'Recent recordings'}</h2>
+          <h2 className="sub-h">{samples.length ? 'Proof ready sample library' : 'Recent recordings'}</h2>
           {samples.length ? (
             <table className="table">
               <tbody>
@@ -96,9 +104,7 @@ export function Ingest() {
                     <td className="small dim">{s.what}</td>
                     <td className="mono small dimmer">{s.duration_s ? `${s.duration_s.toFixed(1)} s` : ''}</td>
                     <td style={{ textAlign: 'right' }}>
-                      {/* 'real' off-air captures are the honest-limits demo, not a decode guarantee - amber
-                         (manual), not green (proven), so the tag itself doesn't oversell them. */}
-                      <span className={'tag ' + (s.kind === 'real' ? 'manual' : s.kind === 'stitch' ? 'novel' : 'plain')}>{s.kind === 'stitch' ? 'multi-sensor' : s.kind === 'real' ? 'off-air' : s.kind}</span>
+                      <span className={'tag ' + (s.kind === 'stitch' ? 'novel' : 'proven')}>{s.kind === 'stitch' ? 'multisensor' : 'proof demo'}</span>
                     </td>
                   </tr>
                 ))}
@@ -175,7 +181,7 @@ function Forensics({ f, file, sidecar, onReset, onRun }: { f: Ingested; file: Fi
           onRun()
         }}>
           <div className="row between"><span className="label">Override</span><MethodTag m="manual" /></div>
-          <p className="small dim">A wrong guess is never silent. Correct anything here and the chain re-runs from ingest.</p>
+          <p className="small dim">A wrong guess is never silent. Correct anything here and the chain reruns from ingest.</p>
           {f.route === 'iq' && (
             <>
               <label className="field"><span className="label">Sample type</span>
@@ -202,7 +208,7 @@ function Forensics({ f, file, sidecar, onReset, onRun }: { f: Ingested; file: Fi
             </label>
           )}
           <label className="field"><span className="label">Sample rate · Hz</span>
-            <input className="input" value={fs} placeholder="blank = back-solve" onChange={(e) => setFs(e.target.value)} inputMode="numeric" />
+            <input className="input" value={fs} placeholder="blank = backsolve" onChange={(e) => setFs(e.target.value)} inputMode="numeric" />
           </label>
           <label className="field"><span className="label">Centre frequency · MHz</span>
             <input className="input" value={fc} placeholder="unknown" onChange={(e) => setFc(e.target.value)} inputMode="decimal" />

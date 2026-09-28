@@ -50,7 +50,7 @@ export function Step(props: {
   const jobNote = useApp((s) => s.jobNote)
   const undecided = props.n >= 3 && job === 'undecided'
   return (
-    <div className="step">
+    <div className={'step' + (undecided ? ' undecided' : props.n === 3 ? ' decoding' : props.n === 4 ? ' frames' : '')}>
       <header className="step-head">
         <div className="step-intro">
           <span className="step-k">Step {props.n} of {STEPS.length}</span>
@@ -65,7 +65,7 @@ export function Step(props: {
           <button className="btn ghost" onClick={() => go(props.back!.to)}>← {props.back.label}</button>
         ) : <span />}
         <div className="step-extra">{props.extra}</div>
-        {props.next && (
+        {!undecided && props.next && (
           <button className="btn primary lg" disabled={props.next.disabled} onClick={props.next.onClick ?? (() => go(props.next!.to!))}>
             {props.next.label} →
           </button>
@@ -99,11 +99,11 @@ export function Stepper() {
 }
 
 export const TOOLS = [
-  { path: '/scene', n: 'Scene', d: 'All emitters in the band, hidden-signal reveal' },
+  { path: '/scene', n: 'Scene', d: 'All emitters in the band, hidden signal reveal' },
   { path: '/genome', n: 'Standards', d: 'Match against 31 named standards' },
-  { path: '/challenge', n: 'Challenge', d: 'Full-screen blind demo for judges' },
-  { path: '/compliance', n: 'Compliance', d: 'Every problem-statement clause, mapped' },
-  { path: '/verify', n: 'Verify', d: 'Independent re-check: drop a certificate and its file' },
+  { path: '/challenge', n: 'Challenge', d: 'Full screen blind demo for judges' },
+  { path: '/compliance', n: 'Compliance', d: 'Every problem statement clause, mapped' },
+  { path: '/verify', n: 'Verify', d: 'Independent recheck: drop a certificate and its file' },
 ]
 
 /** Small anchored popover that closes on outside click or Escape. */

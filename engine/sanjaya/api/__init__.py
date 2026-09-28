@@ -4,14 +4,16 @@ when sent, must be on the allowlist; no CORS wildcard. `sanjaya serve` also host
 import json, threading, time, uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 import numpy as np
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from .. import __version__
 from ..kernels import BACKEND
 
 STAGE_OF = {"capture": (0,), "stitch": (0, 1), "classify": (0,), "measure": (0, 1), "frame": (2, 3), "code": (4,), "scrambler": (4,), "structure": (5,)}
 DEV_ORIGIN = "http://localhost:5173"
+MAX_RECORDING_BYTES = 100 * 1024 * 1024  # current in-memory engine limit
 
 
 @dataclass
@@ -77,6 +79,7 @@ def _run(job: Job, fs: float | None, dtype: str | None, fc_hz: float | None, mem
                 job.stages = ["failed" if v == "running" else v for v in job.stages]
                 return
             (x, fs_, data), (path, name) = caps[ref], members[ref]
+            job.path = data  # the certificate is for this sensor's recording
             extra, source = {"stitch": report}, "stitch"
         else:
             x, fs_, data = load(job.path, fs, dtype)
@@ -142,7 +145,7 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
             resp.headers["Cache-Control"] = "no-cache"               # a rebuilt UI is never masked by a stale page
         if origin:
             resp.headers["Access-Control-Allow-Origin"] = origin
-            resp.headers["Access-Control-Expose-Headers"] = "X-Rows, X-Bins"
+            resp.headers["Access-Control-Expose-Headers"] = "X-Rows, X-Bins, X-Sanjaya-Filename"
             resp.headers["Vary"] = "Origin"
         return resp
 
@@ -160,7 +163,7 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         manifest = samples_dir / "manifest.json" if samples_dir else None
         if not manifest or not manifest.is_file():
             return []
-        return json.loads(manifest.read_text(encoding="utf-8"))
+        return [item for item in json.loads(manifest.read_text(encoding="utf-8")) if item.get("demo", False)]
 
     @app.post("/v1/verify")
     async def verify_certificate(certificate: UploadFile, recording: UploadFile, sigmf: str | None = Form(None),
@@ -171,12 +174,24 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         import hashlib
         from ..io import load, sha256_file
         from ..proof.certificate import verify as verify_cert, check_signature
-        cert = json.loads(await certificate.read())
+        try:
+            cert = json.loads(await certificate.read())
+            if not isinstance(cert, dict) or not isinstance(cert.get("body"), dict):
+                raise ValueError("missing certificate body")
+        except (ValueError, UnicodeDecodeError) as e:
+            raise HTTPException(400, f"invalid certificate JSON: {e}")
         d = workdir / ("verify-" + uuid.uuid4().hex[:12])
         d.mkdir(parents=True, exist_ok=True)
-        src = d / (recording.filename or "recording")
+        src = d / Path(recording.filename or "recording").name
+        size = 0
         with open(src, "wb") as f:
-            f.write(await recording.read())
+            while chunk := await recording.read(1 << 20):
+                size += len(chunk)
+                if size > MAX_RECORDING_BYTES:
+                    f.close()
+                    src.unlink()
+                    raise HTTPException(413, "recording exceeds the 100 MiB in-memory limit")
+                f.write(chunk)
         if sigmf:
             src.with_suffix(".sigmf-meta").write_text(sigmf)
             src = src.with_suffix(".sigmf-data") if src.suffix != ".sigmf-data" else src
@@ -189,8 +204,9 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         except Exception as e:                                       # the certified recipe does not fit this file at all
             problems = [f"the certified recipe could not be re-applied to this file ({type(e).__name__}: {e})"]
         cert_id = "SNJ-" + hashlib.sha256(json.dumps(cert["body"], separators=(",", ":")).encode()).hexdigest()[:12].upper()
+        signature = check_signature(cert)
         return {"reproduced": not problems, "problems": problems, "certificate_id": cert_id,
-                "verdict": cert.get("body", {}).get("verdict"), "signature": check_signature(cert)}
+                "verdict": cert.get("body", {}).get("verdict"), "signature": signature}
 
     @app.post("/v1/jobs")
     async def create_job(request: Request, name: str, fs: float | None = None, dtype: str | None = None,
@@ -208,6 +224,8 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
                 raise HTTPException(404, "no such sample")
             if item["kind"] == "stitch":                          # several captures of one emitter
                 members = [(samples_dir / m["file"], m["label"]) for m in item["members"]]
+                if any(p.stat().st_size > MAX_RECORDING_BYTES for p, _ in members):
+                    raise HTTPException(413, "recording exceeds the 100 MiB in-memory limit")
                 job = Job(jid, item["name"], members[0][0])
                 jobs[jid] = job
                 threading.Thread(target=_run, args=(job, None, None, None, members), daemon=True).start()
@@ -221,8 +239,14 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
             d = workdir / jid
             d.mkdir(parents=True, exist_ok=True)
             src = d / Path(name).name
+            size = 0
             with open(src, "wb") as f:
                 async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_RECORDING_BYTES:
+                        f.close()
+                        src.unlink()
+                        raise HTTPException(413, "recording exceeds the 100 MiB in-memory limit")
                     f.write(chunk)
             if sigmf:                                              # sidecar forwarded by the UI: validated JSON only
                 try:
@@ -232,6 +256,8 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
                     raise HTTPException(400, "sigmf is not a SigMF metadata object")
                 src.with_suffix(".sigmf-meta").write_text(json.dumps(meta))
                 src = src.with_suffix(".sigmf-data") if src.suffix != ".sigmf-data" else src
+        if src.stat().st_size > MAX_RECORDING_BYTES:
+            raise HTTPException(413, "recording exceeds the 100 MiB in-memory limit")
         job = Job(jid, Path(name).name, src)
         jobs[jid] = job
         threading.Thread(target=_run, args=(job, fs, dtype, fc_hz), daemon=True).start()
@@ -273,6 +299,22 @@ def create_app(token: str, port: int, workdir: Path, ui_dist: Path | None = None
         if not j.cert:
             raise HTTPException(409, f"job is {j.state}")
         return JSONResponse(j.cert)
+
+    @app.get("/v1/jobs/{jid}/recording")
+    def recording(jid: str):
+        j = job_or_404(jid)
+        if j.state != "done" or not j.cert:
+            raise HTTPException(409, f"job is {j.state}")
+        return FileResponse(j.path, media_type="application/octet-stream",
+                            headers={"X-Sanjaya-Filename": quote(j.path.name)})
+
+    @app.get("/v1/jobs/{jid}/sigmf-meta")
+    def recording_sidecar(jid: str):
+        j = job_or_404(jid)
+        meta = j.path.with_suffix(".sigmf-meta")
+        if j.state != "done" or not j.cert or not meta.is_file():
+            raise HTTPException(404, "no SigMF sidecar for this job")
+        return FileResponse(meta, media_type="application/json")
 
     if ui_dist is not None and ui_dist.is_dir():
         from fastapi.staticfiles import StaticFiles

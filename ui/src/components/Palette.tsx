@@ -83,7 +83,7 @@ function download(name: string, data: BlobPart, type: string) {
 
 export function exportJSON(kind: 'report' | 'sigmf' = 'report') {
   const s = getState()
-  const params = Object.fromEntries(Object.values(SCENARIO.params).map((p) => [p.key, { value: p.value, unit: p.unit ?? null, method: p.method, confidence: p.conf, evidence: p.evidence }]))
+  const params = Object.fromEntries(Object.values(SCENARIO.params).map((p) => [p.key, { value: p.value, unit: p.unit ?? null, method: p.method, evidence_score_uncalibrated: p.conf, evidence: p.evidence }]))
   if (kind === 'sigmf') {
     const meta = {
       global: { 'core:datatype': SCENARIO.text.sigmfDtype, 'core:sample_rate': SPEC.fs, 'core:version': '1.0.0', 'core:description': 'SANJAYA analysis', 'core:sha512': null },

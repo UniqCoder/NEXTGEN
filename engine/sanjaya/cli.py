@@ -29,6 +29,8 @@ def _analyze(a):
         recipe, source = Recipe.model_validate_json(Path(a.recipe).read_text()), "supplied"
         if abs(recipe.sample_rate_hz - fs) > 1e-6 * fs:
             sys.exit(f"recipe sample rate {recipe.sample_rate_hz} != file sample rate {fs}")
+        if recipe.modulation.scheme.startswith("fsk"):
+            return _analyze_fsk(recipe, x, out, t)
     else:
         from .search import blind_search, SearchError
         try:
@@ -42,6 +44,8 @@ def _analyze(a):
         print(f"blind search ({time.perf_counter() - t:.1f} s):")
         for s in log:
             print(f"  {s.stage:10s} [{s.method}] {s.finding}")
+        if recipe.modulation.scheme.startswith("fsk"):
+            return _analyze_fsk(recipe, x, out, t)
     body = build_body(x, recipe, sha256_file(data), source)
     cert = sign(body)
     (out / "certificate.json").write_text(json.dumps(cert, indent=1))
@@ -58,6 +62,24 @@ def _analyze(a):
     for n in body.near_misses:
         print(f"  near-miss {n.name:32s} {'rejected' if n.rejected else 'NOT rejected (equivalence)'}")
     print(f"wrote {out / 'certificate.json'}, recipe.json, frames.csv")
+
+
+def _analyze_fsk(recipe, x, out, t):
+    """Known-recipe FSK: decode + CRC works (sanjaya.fsk); no certificate yet, honestly -- the layered
+    proof's channel model (proof.certificate.coding_layer) is not FSK-aware. Same documented gap RS had
+    before its own proof branch landed (HANDOFF, commit 147e84c)."""
+    from .fsk import unwrap_fsk
+    fe, uw = unwrap_fsk(x, recipe)
+    (out / "recipe.json").write_text(recipe.model_dump_json(indent=1))
+    with open(out / "frames.csv", "w") as f:
+        names = [fd.name for fd in recipe.framing.fields]
+        f.write("frame,crc_ok," + ",".join(names) + "\n")
+        for i, (fd, ok) in enumerate(zip(uw.fields, uw.crc_ok)):
+            f.write(f"{i},{int(ok)}," + ",".join(str(fd[n]) for n in names) + "\n")
+    print(f"FSK decode ({time.perf_counter() - t:.1f} s): {uw.crc_ok.sum()}/{len(uw.crc_ok)} frames CRC-valid, "
+          f"CFO {fe.cfo_hz:.1f} Hz")
+    print("  no certificate: the layered proof is not FSK-aware yet (decode only, like RS before its proof branch)")
+    print(f"wrote {out / 'recipe.json'}, frames.csv")
 
 
 def _verify(a):

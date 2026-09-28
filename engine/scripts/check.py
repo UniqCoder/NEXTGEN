@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "sanjaya"
 # a module may import only from packages of equal or lower rank (recipe is the shared schema)
 RANK = {"recipe": 0, "kernels": 0, "dsp": 1, "io": 1, "measure": 2, "classify": 4, "demod": 5, "coding": 6, "bits": 7, "chain": 7,
-        "pipeline": 8, "proof": 9, "search": 9, "sufficiency": 9, "stitch": 9, "api": 10, "gen": 10, "compiler": 10, "cli": 11, "__main__": 11}
+        "pipeline": 8, "proof": 9, "search": 9, "sufficiency": 9, "stitch": 9, "fsk": 9, "search_fsk": 9, "api": 10, "gen": 10, "compiler": 10, "cli": 11, "__main__": 11}
 
 
 def layering() -> list[str]:

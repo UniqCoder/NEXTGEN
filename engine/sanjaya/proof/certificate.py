@@ -1,7 +1,7 @@
 """Decode Certificate: canonical JSON, Ed25519 signature, and the independent verifier (PRD §4.2 C1).
 The body is deterministic for (engine version, file, configuration); issue time sits in the signed envelope.
 Key: OS key store via keyring when installed, else a 0600 key file (PRD §6.9). No cryptography -> UNSIGNED."""
-import base64, datetime, hashlib, json, os
+import base64, binascii, datetime, hashlib, json, os
 from pathlib import Path
 import numpy as np
 from .. import __version__
@@ -51,7 +51,7 @@ def build_body(x: np.ndarray, recipe: Recipe, input_sha256: str, recipe_source: 
     uw = unwrap(fe, recipe)
     layers = prove(x, recipe, fe, uw)
     nm = near_miss_battery(x, recipe, fe)
-    verdict = "pass" if all(l.verdict != "fail" for l in layers) else "fail"
+    verdict = "pass" if all(l.verdict == "pass" for l in layers) else "fail"
     return CertificateBody(
         engine_version=__version__, config_hash=config_hash(), input_sha256=input_sha256, recipe=recipe,
         recipe_source=recipe_source, verdict=verdict, layers=layers, near_misses=nm,
@@ -82,11 +82,11 @@ def check_signature(cert: dict) -> str:
         from cryptography.exceptions import InvalidSignature
     except ImportError:
         return "unchecked (cryptography missing)"
-    pub = Ed25519PublicKey.from_public_bytes(base64.b64decode(cert["public_key"]))
     try:
+        pub = Ed25519PublicKey.from_public_bytes(base64.b64decode(cert["public_key"], validate=True))
         pub.verify(base64.b64decode(cert["signature"]), canonical({"body": cert["body"], "issued_utc": cert["issued_utc"]}))
         return "valid"
-    except InvalidSignature:
+    except (InvalidSignature, ValueError, TypeError, KeyError, binascii.Error):
         return "INVALID"
 
 
@@ -95,8 +95,9 @@ def verify(x: np.ndarray, input_sha256: str, cert: dict) -> list[str]:
     Returns the list of problems; empty means the certificate is reproduced."""
     problems = []
     sig = check_signature(cert)
-    if sig == "INVALID":
-        problems.append("signature does not match the certificate content")
+    if sig != "valid":
+        problems.append("signature does not match the certificate content" if sig == "INVALID"
+                        else f"certificate signature could not be validated ({sig})")
     body = cert["body"]
     if body["input_sha256"] != input_sha256:
         problems.append("input file differs from the certified file (SHA-256 mismatch)")

@@ -115,12 +115,17 @@ def _search(x, fs, log, phy, led):
     log.append(Step("classify", f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd" + (f", consistent with {std}" if std else ""),
                     "blind", {"family": phy["family"], "coherence": phy.get("coherence"), "candidates": phy.get("candidates"),
                               "standards": phy["standards"]}))
-    # A classifier never vetoes what the coding layer could still confirm (short or weak captures can mislead it);
-    # only FSK, where the PSK chain cannot apply at all, stops here.
+    # FSK: separate blind path (search_fsk.py) -- non-coherent tone-bank demod, bit-domain frame/code
+    # search, reusing the same dual-code search as the PSK/QAM path. No proof yet (coding_layer() is not
+    # FSK-aware), so a decoded FSK recipe here still reports as recipe_source="search" but the caller
+    # (blind_search) does not run the proof for it -- same "decode but don't certify" scope as the
+    # known-recipe FSK path (fsk.py).
     if phy["family"] == "FSK":
-        led.add("Coding layer", "undecided", "FSK coding is not in the v1 hypothesis set", "scope")
-        raise SearchError(f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified; the v1 blind coding layer covers "
-                          f"linear PSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
+        from .search_fsk import blind_fsk_search, SearchErrorFSK
+        try:
+            return blind_fsk_search(x, fs, phy, log, led)
+        except SearchErrorFSK as e:
+            raise SearchError(str(e)) from e
     scheme = "bpsk" if phy["family"] == "PSK" and phy["order"] == 2 else "qpsk"
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
     ys, sps, t0, cfo, theta, rs, beta = measure_phy(x, fs, scheme)
@@ -150,10 +155,8 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None, scheme: str =
     if fr is None:
         reach = min(8192, ys.size // 4)
         led.add("Frame period and sync", "undecided", f"no repeating constant symbol run for any period 16-{reach} symbols",
-                "data" if reach < 8192 else "structure",
-                need_s=(4 * 8192 / rs, 4 * 8192 / rs) if reach < 8192 else None,
-                note="periods up to 8192 symbols need 4 frames in the capture" if reach < 8192 else None)
-        raise SearchError("no PHY sync marker found (coded-domain sync search arrives with the Meteor path, G3)")
+                "structure", note="Only the searched frame model was tested; no frame period is known, so a recording-length prediction is unavailable")
+        raise SearchError("No supported repeating PHY sync marker was found. This signal may use another framing or coding scheme; a longer recording alone is not known to resolve it")
     P, run_st, run_len, run_tmpl = fr
     frame_s = P / rs
     led.add("Frame period and sync", "decided", f"period {P} symbols ({1e3 * frame_s:.1f} ms), constant run {run_len} symbols")

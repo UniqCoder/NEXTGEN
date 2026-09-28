@@ -3,10 +3,12 @@ same emission then meets; a long-enough capture reports how little it would have
 not help' is only said when the test had the power to see what it is looking for."""
 import numpy as np
 import pytest
+from pathlib import Path
 
 from sanjaya.gen import generate
+from sanjaya.io import read_wav
 from sanjaya.search import blind_search, SearchError
-from sanjaya.sufficiency import frames_needed, power_frames
+from sanjaya.sufficiency import Ledger, frames_needed, power_frames
 
 FRAME = 784 * 8                      # gen0: 784 symbols per frame at 8 samples per symbol
 
@@ -64,3 +66,24 @@ def test_noise_says_there_is_nothing_to_record():
         blind_search(x, 76_800.0)
     assert ei.value.ledger["verdict"] == "not_data_limited"
     assert ei.value.ledger["entries"][0]["limit"] == "signal"
+
+
+def test_unsupported_frame_does_not_invent_a_recording_length():
+    led = Ledger(1.39)
+    led.add("Symbol rate", "undecided", "imprecise", "data", need_s=(49.67, 49.67))
+    led.add("Frame period and sync", "undecided", "no marker found", "structure")
+    assert led.to_dict()["verdict"] == "not_data_limited"
+    assert "49.67" not in led.headline()[1]
+
+
+def test_short_public_hf_capture_reports_unsupported_sync_without_false_precision():
+    path = Path(__file__).resolve().parents[1] / "samples/real-mil188-110a-2400.wav"
+    if not path.exists():
+        pytest.skip("sample recordings not built")
+    x, fs = read_wav(path)
+    with pytest.raises(SearchError) as ei:
+        blind_search(x, fs)
+    led = ei.value.ledger
+    assert led["verdict"] == "not_data_limited"
+    assert "recording longer alone" in led["headline"].lower()
+    assert all(e["need_s"] is None for e in led["entries"] if e["decision"] == "Frame period and sync")

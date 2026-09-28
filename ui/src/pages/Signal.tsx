@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Panel, Seg } from '../components/ui'
 import { DisplayMenu, Step } from '../components/Step'
 import { Waterfall, type Overlay } from '../components/Waterfall'
-import { Terrain } from '../components/Terrain'
+import { Terrain } from '../components/TerrainLazy'
 import { Constellation, Eye, InstFreq, PSD } from '../components/Plots'
 import { Params } from '../components/Params'
 import { SCENARIO } from '../lib/engine'
@@ -41,7 +41,7 @@ export function Signal() {
         <>
           <Seg value={view3d ? '3d' : '2d'} onChange={(v) => setState({ view3d: v === '3d' })} options={[{ v: '2d', label: '2D' }, { v: '3d', label: '3D' }]} label="Waterfall view" />
           <DisplayMenu />
-          <button className="btn" onClick={runAutopilot} disabled={running}>{running ? 'Running…' : 'Re-run Autopilot'}</button>
+          <button className="btn" onClick={runAutopilot} disabled={running}>{running ? 'Running…' : 'Rerun Autopilot'}</button>
         </>
       }
       back={{ to: '/ingest', label: 'Recording' }}

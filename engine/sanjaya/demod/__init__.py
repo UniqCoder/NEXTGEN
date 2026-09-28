@@ -26,10 +26,31 @@ def llr_qpsk(y: np.ndarray, amp: float, sigma2: float) -> np.ndarray:
 # demodulate FSK, QAM, PSK). 'qpsk' keeps the exact legacy table (also used unconditionally for the PHY
 # ASM, sent robustly regardless of the data modulation). The blind coding search (search.py) is still
 # QPSK-only: it is built on a rate-1/2-over-2-bit-symbols model and generalising it is separate work.
-BPS = {"bpsk": 1, "qpsk": 2, "8psk": 3, "16qam": 4, "64qam": 6}
+BPS = {"bpsk": 1, "qpsk": 2, "8psk": 3, "16qam": 4, "64qam": 6, "fsk2": 1, "fsk4": 2, "fsk8": 3}
 # Rotational symmetry order used for the M-th-power CFO/phase trick: BPSK is 2-fold, QPSK 4-fold, 8PSK
-# 8-fold; square Gray QAM (any order) has only 4-fold symmetry, not its bit count.
+# 8-fold; square Gray QAM (any order) has only 4-fold symmetry, not its bit count. FSK is non-coherent
+# (no phase-symmetry trick applies) and never goes through this table.
 ROT_ORDER = {"bpsk": 2, "qpsk": 4, "8psk": 8, "16qam": 4, "64qam": 4}
+
+
+def fsk_tones(scheme: str, spacing_hz: float) -> np.ndarray:
+    """M equally spaced baseband tone frequencies, centred on 0 Hz, low to high."""
+    m = 1 << BPS[scheme]
+    return spacing_hz * (np.arange(m, dtype=np.float64) - (m - 1) / 2)
+
+
+def gray_decode(bits: np.ndarray) -> np.ndarray:
+    """Inverse of k -> k ^ (k>>1): bits (..., bps) MSB-first Gray codeword -> (...) tone index."""
+    b = np.asarray(bits, np.int64)
+    val = np.zeros(b.shape[:-1], np.int64)
+    for i in range(b.shape[-1]):
+        val = (val << 1) | b[..., i]
+    k = val
+    shift = 1
+    while shift < b.shape[-1] + 1:
+        k ^= k >> shift
+        shift <<= 1
+    return k
 
 
 def _gray_pam(bits_per_axis: int) -> np.ndarray:
@@ -115,3 +136,35 @@ def llr_symbols(scheme: str, y: np.ndarray, amp: float, sigma2: float) -> np.nda
         m0 = np.where(bit_i, np.inf, d2).min(-1)
         out[..., i] = m1 - m0
     return out.reshape(*y.shape[:-1], y.shape[-1] * bps).astype(np.float32)
+
+
+def fsk_llr(x: np.ndarray, sample_rate_hz: float, symbol_rate_hz: float,
+            tones_hz: np.ndarray, start_sample: int = 0, noise_var: float = 1.0) -> np.ndarray:
+    """Noncoherent 2/4/8-FSK tone-bank soft bits, Gray-labelled from low to high tone.
+
+    Frequencies are relative to complex baseband. The caller supplies symbol timing and a
+    noise variance measured per complex sample; phase may change between symbols.
+    """
+    tones = np.asarray(tones_hz, dtype=float)
+    if (x.ndim != 1 or tones.ndim != 1 or tones.size not in (2, 4, 8)
+            or not np.all(np.isfinite(tones)) or not np.all(np.diff(tones) > 0)
+            or not np.isfinite([sample_rate_hz, symbol_rate_hz, noise_var]).all()
+            or sample_rate_hz <= 0 or symbol_rate_hz <= 0 or noise_var <= 0
+            or not isinstance(start_sample, (int, np.integer)) or start_sample < 0 or start_sample >= len(x)):
+        raise ValueError("invalid FSK tones, rates, timing or noise variance")
+    sps = sample_rate_hz / symbol_rate_hz
+    if sps < 2 or len(x) - start_sample < sps or max(abs(tones)) >= sample_rate_hz / 2:
+        raise ValueError("FSK tones must fit below Nyquist with at least two samples per symbol")
+    count = int((len(x) - start_sample) / sps)
+    edges = start_sample + np.rint(np.arange(count + 1) * sps).astype(int)
+    scores = np.empty((count, tones.size), dtype=float)
+    for k, (a, b) in enumerate(zip(edges[:-1], edges[1:])):
+        t = np.arange(a, b) / sample_rate_hz
+        scores[k] = np.abs(np.exp(-2j * np.pi * tones[:, None] * t) @ x[a:b]) ** 2 / ((b - a) * noise_var)
+    bps = int(np.log2(tones.size))
+    labels = np.arange(tones.size) ^ (np.arange(tones.size) >> 1)
+    out = np.empty((count, bps), dtype=np.float32)
+    for bit in range(bps):
+        one = ((labels >> (bps - bit - 1)) & 1).astype(bool)
+        out[:, bit] = scores[:, ~one].max(axis=1) - scores[:, one].max(axis=1)
+    return out.ravel()

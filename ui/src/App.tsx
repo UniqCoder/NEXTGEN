@@ -102,10 +102,11 @@ export default function App() {
       <footer className="statusbar">
         {engine === 'demo'
           ? <span><i className="led amber" /> Engine not connected · demo data</span>
+          : route === '/ingest' ? <span><i className="led green" /> Engine connected · ready for a recording</span>
           : <span><i className={'led ' + (job === 'error' || job === 'undecided' ? 'amber' : 'green')} /> Engine connected · {
               job === 'running' ? 'analysing…' : job === 'undecided' ? 'undecided: ' + jobNote : job === 'error' ? 'error: ' + jobNote
               : SCENARIO.view.source === 'demo' ? 'demo data' : 'results from this recording'}</span>}
-        <span>{SCENARIO.file.name} · {SCENARIO.text.format}</span>
+        <span>{route === '/ingest' ? 'Illustrative terrain · choose a recording or proof demo' : `${SCENARIO.file.name} · ${SCENARIO.text.format}`}</span>
         <span className="grow" />
         <span>Ctrl K for every command</span>
       </footer>

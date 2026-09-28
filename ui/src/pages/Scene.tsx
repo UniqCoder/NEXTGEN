@@ -58,7 +58,7 @@ export function Scene() {
             <button className="btn sm" onClick={() => { setState({ sel: { f0: em[0].f0, f1: em[0].f1 } }); go('/signal') }}>Open in Signal</button>
             <button className="btn sm primary" disabled={k > 0} onClick={cancel}>Prove &amp; cancel</button>
           </div>
-          <p className="dim small">Cancellation subtracts the proven re-synthesis, then re-runs detection on the residual.</p>
+          <p className="dim small">Cancellation subtracts the proven resynthesis, then reruns detection on the residual.</p>
         </EmitterCard>
 
         <AnimatePresence>
@@ -79,7 +79,7 @@ export function Scene() {
           state={taught ? 'classified' : 'novel'}>
           {!taught && (
             <>
-              <p className="small">Outside every known class. Closest known: <span className="mono">none</span> (open-set score 0.97). Bursts every 31.4 s, linear sweep 5 kHz / 3.5 s.</p>
+              <p className="small">Outside every known class. Closest known: <span className="mono">none</span> (open set score 0.97). Bursts every 31.4 s, linear sweep 5 kHz / 3.5 s.</p>
               {!teaching ? (
                 <button className="btn sm" onClick={() => setTeaching(true)}>Teach this class…</button>
               ) : (
@@ -168,7 +168,7 @@ function DetectedOnly() {
         {em.map((e) => (
           <EmitterCard key={e.id} id={e.id} title={e.cls} sub={band(e.f0, e.f1)} snr={e.snr}
             tags={<><span className="tag blind">Blind</span><span className="tag plain">{e.std}</span></>} state="decoded">
-            <p className="dim small">Wideband multi-emitter detection (R-17) and successive cancellation (P2) are not in this engine build yet.</p>
+            <p className="dim small">Wideband multiemitter detection (R-17) and successive cancellation (P2) are not in this engine build yet.</p>
           </EmitterCard>
         ))}
       </aside>

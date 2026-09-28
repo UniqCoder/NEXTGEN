@@ -6,7 +6,7 @@ import { go } from '../lib/router'
 const OPTIONS: Record<string, string[]> = {
   Modulation: ['BPSK', 'QPSK', '8PSK', '16QAM', '2-FSK', '4-FSK'],
   'Symbol rate': ['1 200 Bd', '2 400 Bd', '4 800 Bd'],
-  Interleaver: ['Block 24 × 16', 'Block 48 × 32', 'Convolutional 12 × 17', 'Diagonal 32', 'Pseudo-random (lib #7)'],
+  Interleaver: ['Block 24 × 16', 'Block 48 × 32', 'Convolutional 12 × 17', 'Diagonal 32', 'Pseudo random (lib #7)'],
   FEC: ['CC K=7 r½', 'RS(255,223)', 'RS ∘ CC concatenated', 'LDPC (648,324)'],
   Scrambler: ['None', '1 + x¹⁴ + x¹⁵', '1 + x⁴ + x⁷'],
   'Frame sync': ['0xFAF320', '0x1ACFFC1D', '0x7E'],
@@ -41,7 +41,7 @@ export function Challenge() {
       <header className="ch-top">
         <div className="row" style={{ gap: 12 }}>
           <Mark size={22} />
-          <span className="label" style={{ fontSize: 11 }}><b>SANJAYA</b> · Mystery-signal challenge</span>
+          <span className="label" style={{ fontSize: 11 }}><b>SANJAYA</b> · Mystery signal challenge</span>
         </div>
         <div className="mono ch-timer">{t.toFixed(1).padStart(5, '0')}<span className="unit">s</span></div>
         <div className="row">
@@ -120,7 +120,7 @@ export function Challenge() {
           ))}
         </section>
       </div>
-      <footer className="ch-foot label">Preview · recovery is simulated in the front-end until the engine and generator are connected.</footer>
+      <footer className="ch-foot label">Preview · recovery is simulated in the frontend until the engine and generator are connected.</footer>
     </div>
   )
 }
