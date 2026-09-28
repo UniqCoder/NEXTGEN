@@ -3,8 +3,8 @@ Used by the generator AND by the proof's re-synthesis, so every hypothesis is re
 from functools import lru_cache
 import numpy as np
 from .recipe import Recipe
-from .kernels import conv_encode
-from .coding import block_interleave, lfsr_sequence
+from .kernels import conv_encode, rs_encode, bits_to_symbols, symbols_to_bits
+from .coding import interleave, lfsr_sequence
 from .demod import map_qpsk, map_symbols, BPS
 from .dsp import synth_at
 
@@ -31,10 +31,12 @@ def asm_symbols(recipe: Recipe) -> np.ndarray:
 
 
 def tail_bits(recipe: Recipe) -> int:
-    return recipe.fec.K - 1 if recipe.fec.terminated else 0
+    return recipe.fec.K - 1 if recipe.fec.family == "conv" and recipe.fec.terminated else 0
 
 
 def coded_len(recipe: Recipe) -> int:
+    if recipe.fec.family == "rs":
+        return recipe.fec.n * recipe.fec.m
     return (recipe.framing.info_bits + tail_bits(recipe)) * len(recipe.fec.generators_octal)
 
 
@@ -48,9 +50,15 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
     """info (F, Ninfo) -> taps: coded, interleaved, scrambled (F, Nc) and symbols (F, P) incl. the PHY ASM."""
     check_geometry(recipe)
     fec, il = recipe.fec, recipe.interleaver
-    u = np.concatenate([info, np.zeros((info.shape[0], tail_bits(recipe)), np.uint8)], 1)
-    coded = conv_encode(u, fec.K, tuple(fec.generators_octal))
-    inter = block_interleave(coded, il.rows, il.cols)
+    if fec.family == "rs":
+        if info.shape[1] != fec.k * fec.m:
+            raise ValueError(f"RS({fec.n},{fec.k}) needs {fec.k * fec.m} info bits, frame has {info.shape[1]}")
+        cw = rs_encode(bits_to_symbols(info, fec.m), fec.n, fec.k, fec.m)
+        coded = symbols_to_bits(cw, fec.m)
+    else:
+        u = np.concatenate([info, np.zeros((info.shape[0], tail_bits(recipe)), np.uint8)], 1)
+        coded = conv_encode(u, fec.K, tuple(fec.generators_octal))
+    inter = interleave(coded, il.kind, il.rows, il.cols, il.seed)
     scr = inter ^ scrambler_seq(recipe, inter.shape[1])[None]
     body = map_symbols(recipe.modulation.scheme, scr)
     asm = np.broadcast_to(asm_symbols(recipe), (info.shape[0], asm_symbols(recipe).size))

@@ -12,6 +12,41 @@ def block_deinterleave(y: np.ndarray, rows: int, cols: int) -> np.ndarray:
     return block_interleave(y, cols, rows)
 
 
+def diagonal_perm(rows: int, cols: int) -> np.ndarray:
+    """Helical/cross interleaver: write row-major into a rows x cols matrix, read row r's c-th slot
+    from column (c + r) mod cols (a per-row cyclic shift). Bijective on rows*cols by construction."""
+    r, c = np.meshgrid(np.arange(rows), np.arange(cols), indexing="ij")
+    return (r * cols + (c + r) % cols).reshape(-1)
+
+
+def random_perm(n: int, seed: int) -> np.ndarray:
+    return np.random.default_rng(seed).permutation(n)
+
+
+def _perm(kind: str, rows: int, cols: int, seed: int | None) -> np.ndarray:
+    if kind == "diagonal":
+        return diagonal_perm(rows, cols)
+    if kind == "random":
+        return random_perm(rows * cols, seed)
+    raise ValueError(f"unknown interleaver kind '{kind}'")
+
+
+def interleave(x: np.ndarray, kind: str, rows: int, cols: int, seed: int | None = None) -> np.ndarray:
+    """Write x row by row into the rows x cols geometry, read out per 'kind'. Works on the last axis."""
+    if kind == "block":
+        return block_interleave(x, rows, cols)
+    return x[..., _perm(kind, rows, cols, seed)]
+
+
+def deinterleave(y: np.ndarray, kind: str, rows: int, cols: int, seed: int | None = None) -> np.ndarray:
+    if kind == "block":
+        return block_deinterleave(y, rows, cols)
+    perm = _perm(kind, rows, cols, seed)
+    inv = np.empty_like(perm)
+    inv[perm] = np.arange(perm.size)
+    return y[..., inv]
+
+
 def lfsr_sequence(poly_exponents: list[int], seed: int, n: int) -> np.ndarray:
     """Additive (Fibonacci) scrambler sequence. Polynomial as exponents, e.g. CCSDS [8, 7, 5, 3, 0]
     with seed 0xFF gives FF 48 0E C0 9A ... (checked in tests)."""
