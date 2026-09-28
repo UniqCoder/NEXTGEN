@@ -123,8 +123,41 @@ def phy_layer(x: np.ndarray, recipe: Recipe, rs: Resynthesis) -> LayerVerdict:
                         thresholds=th, calibration_id=CALIBRATION_ID)
 
 
+def _coding_layer_rs(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict:
+    """RS analogue of K1/K2: RS1 checks the uncorrectable-frame rate against the channel's implied symbol
+    error rate (a wrong n/k/m or generator gives far more, or far fewer, uncorrectable frames than the
+    channel explains); RS2 is the same corrections-consistency check as conv's K2, reused verbatim."""
+    fec = recipe.fec
+    esn0 = 10 ** (fe.esn0_db / 10)
+    p = float(norm.sf(np.sqrt(esn0)))                              # per-bit hard-decision error probability
+    p_sym = 1 - (1 - p) ** fec.m
+    t = (fec.n - fec.k) // 2
+    F = uw.fec_ok.size
+    p_bad = float(binom.sf(t, fec.n, p_sym))
+    n_bad = int((~uw.fec_ok).sum())
+    q = (1 - TH["k2_coverage"]) / 2
+    pb = min(max(p_bad, 1e-12), 1 - 1e-12)
+    bad_lo, bad_hi = float(binom.ppf(q, F, pb)), float(binom.ppf(1 - q, F, pb))
+    nc, nb = int((uw.hard != uw.reencoded).sum()), uw.hard.size
+    u = TH["k2_snr_u_db"]
+    p_lo, p_hi = norm.sf(np.sqrt(esn0 * 10 ** (u / 10))), norm.sf(np.sqrt(esn0 * 10 ** (-u / 10)))
+    c_lo, c_hi = float(binom.ppf(q, nb, p_lo)), float(binom.ppf(1 - q, nb, p_hi))
+    fails = []
+    if not (bad_lo <= n_bad <= bad_hi):
+        fails.append("RS1 uncorrectable-frame rate inconsistent with the channel's symbol error rate")
+    if not c_lo <= nc <= c_hi:
+        fails.append("RS2 decoder corrections inconsistent with the channel error rate")
+    return LayerVerdict(layer="coding", verdict="fail" if fails else "pass", reason="; ".join(fails) or None,
+                        stats={"RS1_uncorrectable": float(n_bad), "RS1_expected_p": p_bad, "RS1_frames": float(F),
+                               "pre_fec_ber_hat": p, "RS2_corrections": float(nc), "RS2_lo": c_lo, "RS2_hi": c_hi},
+                        thresholds={"RS1_lo": bad_lo, "RS1_hi": bad_hi, "K2_coverage": TH["k2_coverage"]},
+                        calibration_id=CALIBRATION_ID)
+
+
 def coding_layer(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict:
     fec = recipe.fec
+    if fec.family == "rs":
+        return _coding_layer_rs(recipe, fe, uw)
     gens = tuple(fec.generators_octal)
     s = syndrome_rate_half(uw.hard, fec.K, gens)
     N, f = s.size, float(s.mean())
@@ -205,15 +238,20 @@ def near_miss_battery(x: np.ndarray, recipe: Recipe, fe: FrontEnd) -> list[NearM
     or it is reported as an equivalence the data cannot separate."""
     m = recipe.model_copy(deep=True)
     fec, il, sc, cr, mo = m.fec, m.interleaver, m.scrambler, m.framing.crc, m.modulation
-    g = fec.generators_octal
     cands = [
         ("phy", f"roll-off {mo.rolloff + 0.1:.2f}", {"modulation": mo.model_copy(update={"rolloff": round(mo.rolloff + 0.1, 3)})}),
         ("phy", f"roll-off {max(0.05, mo.rolloff - 0.1):.2f}", {"modulation": mo.model_copy(update={"rolloff": round(max(0.05, mo.rolloff - 0.1), 3)})}),
-        ("coding", "generators swapped", {"fec": fec.model_copy(update={"generators_octal": g[::-1]})}),
-        ("coding", "generator neighbour (171,135)" if g != ["171", "135"] else "generator neighbour (171,133)",
-         {"fec": fec.model_copy(update={"generators_octal": ["171", "135"] if g != ["171", "135"] else ["171", "133"]})}),
         ("coding", f"interleaver transposed {il.cols}x{il.rows}", {"interleaver": il.model_copy(update={"rows": il.cols, "cols": il.rows})}),
     ]
+    if fec.family != "rs":
+        g = fec.generators_octal
+        cands += [
+            ("coding", "generators swapped", {"fec": fec.model_copy(update={"generators_octal": g[::-1]})}),
+            ("coding", "generator neighbour (171,135)" if g != ["171", "135"] else "generator neighbour (171,133)",
+             {"fec": fec.model_copy(update={"generators_octal": ["171", "135"] if g != ["171", "135"] else ["171", "133"]})}),
+        ]
+    # RS-specific near-misses (wrong n/k/m) change coded_len and info_bits together, needing a framing rebuild
+    # to stay geometry-consistent -- left for the RS calibration pass rather than risked here.
     if sc is not None:
         cands.append(("structure", "scrambler seed shifted", {"scrambler": sc.model_copy(update={"seed": sc.seed ^ 1})}))
     if cr is not None:
