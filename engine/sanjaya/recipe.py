@@ -28,7 +28,25 @@ class RSCode(BaseModel):
     m: int = F(ge=3, le=10)
 
 
-FEC = Annotated[Union[ConvCode, RSCode], F(discriminator="family")]
+class ConcatCode(BaseModel):
+    """Serial concatenation: RS outer code protects the conv inner code's residual errors after Viterbi
+    decode. info -> RS encode -> conv encode -> ... -> Viterbi decode -> RS decode -> info."""
+    family: Literal["concat"] = "concat"
+    outer: RSCode
+    inner: ConvCode
+
+
+class LDPCCode(BaseModel):
+    """Regular LDPC over GF(2): H (m x n, k = n - m) as m row bitmasks (bit j = column j), decoded by
+    log-domain min-sum belief propagation. Reference-grade, not a standard (no optimised H construction)."""
+    family: Literal["ldpc"] = "ldpc"
+    n: int = F(gt=0)
+    m: int = F(gt=0)
+    h_rows: list[int]
+    max_iters: int = F(default=50, gt=0)
+
+
+FEC = Annotated[Union[ConvCode, RSCode, ConcatCode, LDPCCode], F(discriminator="family")]
 
 
 class Interleaver(BaseModel):

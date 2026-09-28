@@ -3,12 +3,12 @@ The hypothesis-tree search (search.py) calls these same functions for every bran
 from dataclasses import dataclass, field
 import numpy as np
 from .recipe import Recipe
-from .chain import sps_of, asm_symbols, scrambler_seq, check_geometry, tail_bits, encode_frames, coded_len
+from .chain import sps_of, asm_symbols, scrambler_seq, check_geometry, tail_bits, encode_frames, coded_len, ldpc_matrices
 from .demod import llr_symbols, constellation, vv_ref_phase, BPS, ROT_ORDER
 from .dsp import rotate, sample_at
 from .measure import cfo_power, timing_fit
 from .coding import deinterleave
-from .kernels import viterbi_soft, rs_decode, bits_to_symbols, symbols_to_bits
+from .kernels import viterbi_soft, rs_decode, bits_to_symbols, symbols_to_bits, ldpc_decode
 from .bits import crc_bits, from_bits
 
 ASM_ACCEPT = 0.5          # normalised ASM correlation needed to accept a frame (chance level ~ 1/sqrt(16) = 0.25)
@@ -140,6 +140,17 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
         hard = bits_to_symbols((llr < 0).astype(np.uint8), fec.m)
         info_syms, fec_ok = rs_decode(hard, fec.n, fec.k, fec.m)
         info = symbols_to_bits(info_syms, fec.m)
+    elif fec.family == "concat":
+        u = viterbi_soft(llr, fec.inner.K, tuple(fec.inner.generators_octal), fec.inner.terminated)
+        outer_bits = u[:, : u.shape[1] - tail_bits(recipe)]
+        o = fec.outer
+        info_syms, fec_ok = rs_decode(bits_to_symbols(outer_bits, o.m), o.n, o.k, o.m)
+        info = symbols_to_bits(info_syms, o.m)
+    elif fec.family == "ldpc":
+        _, colperm, H = ldpc_matrices(fec)
+        k = fec.n - fec.m
+        hard, fec_ok = ldpc_decode(llr, H, fec.max_iters)
+        info = hard[:, colperm[:k]]
     else:
         u = viterbi_soft(llr, fec.K, tuple(fec.generators_octal), fec.terminated)
         info = u[:, : u.shape[1] - tail_bits(recipe)]
