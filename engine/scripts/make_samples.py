@@ -57,17 +57,22 @@ SENSORS = [  # id, label, seed, samples/symbol, Es/N0, frames, clock ppm, gain, 
 
 REAL = [
     ("real-stanag4285-idle", "STANAG4285_IDLE.mp3", "STANAG 4285 · idle (HF, 8PSK, 2400 Bd)", "STANAG_4285",
-     "NATO HF serial modem, 1800 Hz carrier in the receiver audio."),
+     "NATO HF serial modem, 1800 Hz carrier in the receiver audio. Off air: HF multipath smears the PSK "
+     "order past what the v1 receiver (no equalizer) can separate, so this one identifies but stays Undecided."),
     ("real-mil188-110a-2400", "MIL188-110A_2400S.mp3", "MIL-STD-188-110A · 2400 bps serial (HF, 8PSK)", "MIL-STD-188-110_Serial",
-     "US military HF serial-tone modem; a 1.4 s burst."),
+     "US military HF serial-tone modem; a 1.4 s burst. Off air: same HF-multipath limit as STANAG 4285 - "
+     "identified, not decoded."),
     ("real-hfdl-1200", "HFDL-1200bps.mp3", "HFDL · 1200 bps (HF aircraft data link, PSK bursts)", "HFDL",
-     "Bursty PSK at 1800 Bd, 1440 Hz carrier."),
+     "Bursty PSK at 1800 Bd, 1440 Hz carrier. Off air: order separates, but this is ACARS/HFDL's own bursty "
+     "framing, not the v1 block+ASM+conv model, so no sync marker is found - identified, not decoded."),
     ("real-psk31", "BPSK31a.mp3", "PSK31 (HF amateur, BPSK 31.25 Bd)", "PSK31",
-     "A very narrow BPSK signal, about 60 Hz wide."),
+     "A very narrow BPSK signal, about 60 Hz wide. Off air: BPSK itself is blind-decodable now, but PSK31 "
+     "uses varicode with idle tones, not the v1 recipe model - identified, not decoded."),
     ("real-sitor-b", "SITOR-B.mp3", "SITOR-B / NAVTEX (HF maritime, FSK 100 Bd)", "NAVTEX",
-     "Two-tone FSK, 170 Hz shift; first 60 s of the recording."),
+     "Two-tone FSK, 170 Hz shift; first 60 s of the recording. Off air: FSK coding isn't in the v1 blind "
+     "hypothesis set yet (PSK/QAM only) - identified, not decoded."),
     ("real-ale-2g", "2G_ALEaudio.mp3", "2G ALE (HF link establishment, 8-FSK 125 Bd)", "Automatic_Link_Establishment_(ALE)",
-     "Eight-tone FSK, MIL-STD-188-141."),
+     "Eight-tone FSK, MIL-STD-188-141. Off air: same FSK gap as SITOR-B - identified, not decoded."),
 ]
 
 

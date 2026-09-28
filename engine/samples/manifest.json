@@ -115,7 +115,7 @@
   "name": "STANAG 4285 · idle (HF, 8PSK, 2400 Bd)",
   "kind": "real",
   "file": "real-stanag4285-idle.wav",
-  "what": "NATO HF serial modem, 1800 Hz carrier in the receiver audio.",
+  "what": "NATO HF serial modem, 1800 Hz carrier in the receiver audio. Off air: HF multipath smears the PSK order past what the v1 receiver (no equalizer) can separate, so this one identifies but stays Undecided.",
   "source": "https://www.sigidwiki.com/wiki/STANAG_4285",
   "duration_s": 10.0
  },
@@ -124,7 +124,7 @@
   "name": "MIL-STD-188-110A · 2400 bps serial (HF, 8PSK)",
   "kind": "real",
   "file": "real-mil188-110a-2400.wav",
-  "what": "US military HF serial-tone modem; a 1.4 s burst.",
+  "what": "US military HF serial-tone modem; a 1.4 s burst. Off air: same HF-multipath limit as STANAG 4285 - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/MIL-STD-188-110_Serial",
   "duration_s": 1.4
  },
@@ -133,7 +133,7 @@
   "name": "HFDL · 1200 bps (HF aircraft data link, PSK bursts)",
   "kind": "real",
   "file": "real-hfdl-1200.wav",
-  "what": "Bursty PSK at 1800 Bd, 1440 Hz carrier.",
+  "what": "Bursty PSK at 1800 Bd, 1440 Hz carrier. Off air: order separates, but this is ACARS/HFDL's own bursty framing, not the v1 block+ASM+conv model, so no sync marker is found - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/HFDL",
   "duration_s": 2.8
  },
@@ -142,7 +142,7 @@
   "name": "PSK31 (HF amateur, BPSK 31.25 Bd)",
   "kind": "real",
   "file": "real-psk31.wav",
-  "what": "A very narrow BPSK signal, about 60 Hz wide.",
+  "what": "A very narrow BPSK signal, about 60 Hz wide. Off air: BPSK itself is blind-decodable now, but PSK31 uses varicode with idle tones, not the v1 recipe model - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/PSK31",
   "duration_s": 14.9
  },
@@ -151,7 +151,7 @@
   "name": "SITOR-B / NAVTEX (HF maritime, FSK 100 Bd)",
   "kind": "real",
   "file": "real-sitor-b.wav",
-  "what": "Two-tone FSK, 170 Hz shift; first 60 s of the recording.",
+  "what": "Two-tone FSK, 170 Hz shift; first 60 s of the recording. Off air: FSK coding isn't in the v1 blind hypothesis set yet (PSK/QAM only) - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/NAVTEX",
   "duration_s": 60.0
  },
@@ -160,7 +160,7 @@
   "name": "2G ALE (HF link establishment, 8-FSK 125 Bd)",
   "kind": "real",
   "file": "real-ale-2g.wav",
-  "what": "Eight-tone FSK, MIL-STD-188-141.",
+  "what": "Eight-tone FSK, MIL-STD-188-141. Off air: same FSK gap as SITOR-B - identified, not decoded.",
   "source": "https://www.sigidwiki.com/wiki/Automatic_Link_Establishment_(ALE)",
   "duration_s": 29.9
  }

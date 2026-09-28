@@ -84,7 +84,9 @@ export function Ingest() {
                     <td className="small dim">{s.what}</td>
                     <td className="mono small dimmer">{s.duration_s ? `${s.duration_s.toFixed(1)} s` : ''}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <span className={'tag ' + (s.kind === 'real' ? 'proven' : s.kind === 'stitch' ? 'novel' : 'plain')}>{s.kind === 'stitch' ? 'multi-sensor' : s.kind}</span>
+                      {/* 'real' off-air captures are the honest-limits demo, not a decode guarantee - amber
+                         (manual), not green (proven), so the tag itself doesn't oversell them. */}
+                      <span className={'tag ' + (s.kind === 'real' ? 'manual' : s.kind === 'stitch' ? 'novel' : 'plain')}>{s.kind === 'stitch' ? 'multi-sensor' : s.kind === 'real' ? 'off-air' : s.kind}</span>
                     </td>
                   </tr>
                 ))}
