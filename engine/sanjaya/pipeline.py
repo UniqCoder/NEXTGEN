@@ -7,8 +7,8 @@ from .chain import sps_of, asm_symbols, scrambler_seq, check_geometry, tail_bits
 from .demod import llr_symbols, constellation, vv_ref_phase, BPS, ROT_ORDER
 from .dsp import rotate, sample_at
 from .measure import cfo_power, timing_fit
-from .coding import block_deinterleave
-from .kernels import viterbi_soft
+from .coding import deinterleave
+from .kernels import viterbi_soft, rs_decode, bits_to_symbols, symbols_to_bits
 from .bits import crc_bits, from_bits
 
 ASM_ACCEPT = 0.5          # normalised ASM correlation needed to accept a frame (chance level ~ 1/sqrt(16) = 0.25)
@@ -133,10 +133,15 @@ def unwrap(fe: FrontEnd, recipe: Recipe) -> Unwrapped:
     llr = llr_symbols(recipe.modulation.scheme, body, fe.amp, fe.sigma2)
     llr *= (1.0 - 2.0 * scrambler_seq(recipe, llr.shape[1]))[None].astype(np.float32)
     il, fec = recipe.interleaver, recipe.fec
-    llr = block_deinterleave(llr, il.rows, il.cols)
-    u = viterbi_soft(llr, fec.K, tuple(fec.generators_octal), fec.terminated)
-    info = u[:, : u.shape[1] - tail_bits(recipe)]
-    reenc = block_deinterleave(encode_frames(recipe, info)["interleaved"], il.rows, il.cols)
+    llr = deinterleave(llr, il.kind, il.rows, il.cols, il.seed)
+    if fec.family == "rs":
+        hard = bits_to_symbols((llr < 0).astype(np.uint8), fec.m)
+        info_syms, rs_ok = rs_decode(hard, fec.n, fec.k, fec.m)
+        info = symbols_to_bits(info_syms, fec.m)
+    else:
+        u = viterbi_soft(llr, fec.K, tuple(fec.generators_octal), fec.terminated)
+        info = u[:, : u.shape[1] - tail_bits(recipe)]
+    reenc = deinterleave(encode_frames(recipe, info)["interleaved"], il.kind, il.rows, il.cols, il.seed)
     fields, crc_ok = parse_fields(recipe, info)
     return Unwrapped(llr, (llr < 0).astype(np.uint8), info, reenc, fields, crc_ok)
 

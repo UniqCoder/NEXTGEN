@@ -1,6 +1,6 @@
 """The Recipe and the Certificate: the single schema source (PRD §6.1, §6.7).
 Schema v0.1 covers the G1 vertical slice; new families are added as new Literal members."""
-from typing import Literal
+from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field as F
 
 
@@ -19,10 +19,23 @@ class ConvCode(BaseModel):
     terminated: bool = True
 
 
+class RSCode(BaseModel):
+    """Reed-Solomon over GF(2^m), narrow-sense (roots alpha^1..alpha^(n-k)), corrects t = (n-k)//2 symbol
+    errors. n <= 2^m - 1; n < 2^m - 1 is a shortened code (info_bits = k*m exactly)."""
+    family: Literal["rs"] = "rs"
+    n: int = F(gt=0)
+    k: int = F(gt=0)
+    m: int = F(ge=3, le=10)
+
+
+FEC = Annotated[Union[ConvCode, RSCode], F(discriminator="family")]
+
+
 class Interleaver(BaseModel):
-    kind: Literal["block"] = "block"
+    kind: Literal["block", "diagonal", "random"] = "block"
     rows: int = F(gt=0)      # written row by row
-    cols: int = F(gt=0)      # read column by column
+    cols: int = F(gt=0)      # read column by column ('block'); matrix shape ('diagonal'); size = rows*cols ('random')
+    seed: int | None = None  # required for 'random' (deterministic PRNG permutation)
 
 
 class Scrambler(BaseModel):
@@ -64,7 +77,7 @@ class Recipe(BaseModel):
     schema_version: Literal["0.1"] = "0.1"
     sample_rate_hz: float = F(gt=0)
     modulation: Modulation
-    fec: ConvCode
+    fec: FEC
     interleaver: Interleaver
     scrambler: Scrambler | None = None
     framing: Framing
