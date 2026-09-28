@@ -2,8 +2,9 @@
 import numpy as np
 import pytest
 from sanjaya.gen import generate, gen0_recipe
-from sanjaya.recipe import ConvCode, Interleaver, Scrambler
+from sanjaya.recipe import ConvCode, Interleaver, Scrambler, Modulation
 from sanjaya.search import blind_search, SearchError
+from sanjaya.pipeline import frontend, unwrap
 from sanjaya.proof import prove
 
 
@@ -36,6 +37,24 @@ def test_blind_search_recovers_recipe_and_proves(name):
     assert found.scrambler == r.scrambler
     assert found.framing.asm_hex == r.framing.asm_hex and found.framing.crc == r.framing.crc
     assert abs(found.modulation.symbol_rate_hz / 9600 - 1 + ppm * 1e-6 / (1 + ppm * 1e-6)) < 5e-6
+    assert [v.verdict for v in prove(x, found)] == ["pass", "pass", "pass"]
+
+
+def test_blind_search_finds_bpsk():
+    """v1.1: BPSK is blind-decodable too (module docstring in search.py explains why it, and only it, is safe
+    to add to the QPSK-only v1 hypothesis set). Scrambler seed is checked functionally (decode + CRC + proof),
+    not by literal equality: an unconstrained LFSR-state bit can land on an equally-valid neighbour seed."""
+    base = gen0_recipe()
+    r = base.model_copy(update={"modulation": Modulation(scheme="bpsk", symbol_rate_hz=base.modulation.symbol_rate_hz,
+                                                          rolloff=base.modulation.rolloff)})
+    x, r, truth, taps = generate(seed=11, recipe=r, esn0_db=8.0, n_frames=20)
+    found, log = blind_search(x, r.sample_rate_hz)
+    assert found.modulation.scheme == "bpsk"
+    assert found.fec.K == r.fec.K and found.fec.generators_octal == r.fec.generators_octal
+    assert (found.interleaver.rows, found.interleaver.cols) == (r.interleaver.rows, r.interleaver.cols)
+    fe = frontend(x, found)
+    uw = unwrap(fe, found)
+    assert len(fe.starts) == truth["n_frames"] and uw.crc_ok.all()
     assert [v.verdict for v in prove(x, found)] == ["pass", "pass", "pass"]
 
 

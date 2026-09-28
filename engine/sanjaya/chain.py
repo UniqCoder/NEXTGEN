@@ -3,7 +3,7 @@ Used by the generator AND by the proof's re-synthesis, so every hypothesis is re
 from functools import lru_cache
 import numpy as np
 from .recipe import Recipe
-from .kernels import conv_encode, rs_encode, bits_to_symbols, symbols_to_bits
+from .kernels import conv_encode, rs_encode, bits_to_symbols, symbols_to_bits, systematic_generator, ldpc_encode
 from .coding import interleave, lfsr_sequence
 from .demod import map_qpsk, map_symbols, BPS
 from .dsp import synth_at
@@ -31,13 +31,37 @@ def asm_symbols(recipe: Recipe) -> np.ndarray:
 
 
 def tail_bits(recipe: Recipe) -> int:
-    return recipe.fec.K - 1 if recipe.fec.family == "conv" and recipe.fec.terminated else 0
+    fec = recipe.fec
+    if fec.family in ("rs", "ldpc"):
+        return 0
+    inner = fec.inner if fec.family == "concat" else fec
+    return inner.K - 1 if inner.terminated else 0
 
 
 def coded_len(recipe: Recipe) -> int:
-    if recipe.fec.family == "rs":
-        return recipe.fec.n * recipe.fec.m
-    return (recipe.framing.info_bits + tail_bits(recipe)) * len(recipe.fec.generators_octal)
+    fec = recipe.fec
+    if fec.family == "rs":
+        return fec.n * fec.m
+    if fec.family == "ldpc":
+        return fec.n
+    if fec.family == "concat":
+        return (fec.outer.n * fec.outer.m + tail_bits(recipe)) * len(fec.inner.generators_octal)
+    return (recipe.framing.info_bits + tail_bits(recipe)) * len(fec.generators_octal)
+
+
+@lru_cache(maxsize=8)
+def _ldpc_gen(h_rows: tuple[int, ...], n: int, m: int):
+    H = np.zeros((m, n), np.uint8)
+    for i, row in enumerate(h_rows):
+        for j in range(n):
+            H[i, j] = (row >> j) & 1
+    G, colperm = systematic_generator(H)
+    return G, colperm, H
+
+
+def ldpc_matrices(fec) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(G, colperm, H) for an LDPCCode, cached: G@H.T == 0, info bit i sits at codeword[colperm[i]]."""
+    return _ldpc_gen(tuple(fec.h_rows), fec.n, fec.m)
 
 
 def check_geometry(recipe: Recipe) -> None:
@@ -55,6 +79,19 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
             raise ValueError(f"RS({fec.n},{fec.k}) needs {fec.k * fec.m} info bits, frame has {info.shape[1]}")
         cw = rs_encode(bits_to_symbols(info, fec.m), fec.n, fec.k, fec.m)
         coded = symbols_to_bits(cw, fec.m)
+    elif fec.family == "concat":
+        o = fec.outer
+        if info.shape[1] != o.k * o.m:
+            raise ValueError(f"RS({o.n},{o.k}) outer needs {o.k * o.m} info bits, frame has {info.shape[1]}")
+        outer_bits = symbols_to_bits(rs_encode(bits_to_symbols(info, o.m), o.n, o.k, o.m), o.m)
+        u = np.concatenate([outer_bits, np.zeros((info.shape[0], tail_bits(recipe)), np.uint8)], 1)
+        coded = conv_encode(u, fec.inner.K, tuple(fec.inner.generators_octal))
+    elif fec.family == "ldpc":
+        G, colperm, H = ldpc_matrices(fec)
+        k = fec.n - fec.m
+        if info.shape[1] != k:
+            raise ValueError(f"LDPC({fec.n},{fec.m}) needs {k} info bits, frame has {info.shape[1]}")
+        coded = ldpc_encode(info, G)
     else:
         u = np.concatenate([info, np.zeros((info.shape[0], tail_bits(recipe)), np.uint8)], 1)
         coded = conv_encode(u, fec.K, tuple(fec.generators_octal))

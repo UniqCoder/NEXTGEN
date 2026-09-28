@@ -1,7 +1,16 @@
 """Blind recipe search, v1 (fast path). Stages follow the hypothesis tree of PRD §6.5; each stage records
 what it found, how (blind / library), and the evidence, and hands ranked alternatives downstream.
-Scope v1: single-carrier QPSK, PHY sync marker, frame-aligned block interleaver, rate-1/2 conv code,
-frame-synchronous additive scrambler, CRC framing. Anything outside raises SearchError with the reason."""
+Scope v1: single-carrier QPSK or BPSK, PHY sync marker, frame-aligned block interleaver, rate-1/2 conv code,
+frame-synchronous additive scrambler, CRC framing. Anything outside raises SearchError with the reason.
+
+BPSK is the only other modulation this blind search identifies (v1.1): its 1-bit/symbol hard decision has no
+I/Q-bit-pair "swap" ambiguity (identify_code's swap hypothesis is about the *code's* c0/c1 emission order in
+the channel-bit stream, not modulation - it applies unchanged), and its rotation ambiguity (k*pi, a global bit
+complement) is frame-constant so it cancels under the frame-differencing identify_code already relies on to
+cancel the scrambler - both properties are airtight for 2 symmetric points. 8PSK/16QAM/64QAM are NOT attempted
+here: a Gray-labelled constellation's rotation-to-bit-pattern relationship is not guaranteed to be a fixed,
+data-independent XOR/permutation once there are >2 points (needs its own derivation and tests per scheme),
+and a wrong hypothesis here risks a wrong blind decode - the one thing this project cannot afford to get wrong."""
 from dataclasses import dataclass, field
 import numpy as np
 from .recipe import Recipe, Modulation, ConvCode, Interleaver, Scrambler, Crc, Field, Framing
@@ -9,6 +18,7 @@ from .measure import symbol_rate_blind, cfo_power, rolloff_psd
 from .classify import identify
 from .sufficiency import Ledger, phy_entries, frames_needed, power_frames, Z_CODE, Z_REAL
 from .pipeline import symbols, frontend, unwrap
+from .demod import BPS, ROT_ORDER, vv_ref_phase
 from .coding.blind import identify_code, solve_scrambler, edge_violations, CodeHypothesis
 from .bits.lens import find_counter, find_crc, constant_runs
 
@@ -33,6 +43,13 @@ def _qpsk_bits(s: np.ndarray) -> np.ndarray:
     b = np.empty((*s.shape[:-1], 2 * s.shape[-1]), np.uint8)
     b[..., 0::2], b[..., 1::2] = s.real < 0, s.imag < 0
     return b
+
+
+def _hard_bits(scheme: str, s: np.ndarray) -> np.ndarray:
+    """Hard bit decisions, matching demod.map_symbols' bit ordering. BPSK/QPSK only (see module docstring)."""
+    if scheme == "bpsk":
+        return (s.real < 0).astype(np.uint8)
+    return _qpsk_bits(s)
 
 
 def discover_frames(ys: np.ndarray, pmin: int = 16, pmax: int = 8192):
@@ -82,8 +99,8 @@ def blind_search(x: np.ndarray, fs: float, on_step=None) -> tuple[Recipe, list[S
         return recipe, log
     except SearchError as e:
         e.ledger = led.to_dict()
-        if phy is not None and phy["family"] == "PSK" and phy["order"] != 4:
-            head = (f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified (the v1 coding layer covers QPSK)" if phy["order"]
+        if phy is not None and phy["family"] == "PSK" and phy["order"] not in (2, 4):
+            head = (f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified (the v1 coding layer covers BPSK/QPSK)" if phy["order"]
                     else "PSK order not separable (symbols smeared: HF multipath with no equalizer, or too few symbols)")
             e.args = (f"{head}; under the QPSK hypothesis: {e.args[0]}",)
         e.phy = phy
@@ -99,32 +116,35 @@ def _search(x, fs, log, phy, led):
                     "blind", {"family": phy["family"], "coherence": phy.get("coherence"), "candidates": phy.get("candidates"),
                               "standards": phy["standards"]}))
     # A classifier never vetoes what the coding layer could still confirm (short or weak captures can mislead it);
-    # only FSK, where the QPSK chain cannot apply at all, stops here.
+    # only FSK, where the PSK chain cannot apply at all, stops here.
     if phy["family"] == "FSK":
         led.add("Coding layer", "undecided", "FSK coding is not in the v1 hypothesis set", "scope")
         raise SearchError(f"{phy['modulation']} at {phy['rate_hz']:.2f} Bd identified; the v1 blind coding layer covers "
                           f"linear PSK with a convolutional code, so this family's coding is not in the hypothesis set yet")
+    scheme = "bpsk" if phy["family"] == "PSK" and phy["order"] == 2 else "qpsk"
     # 1-2 OBSERVE / MEASURE ---------------------------------------------------------------------------------
-    ys, sps, t0, cfo, theta, rs, beta = measure_phy(x, fs)
+    ys, sps, t0, cfo, theta, rs, beta = measure_phy(x, fs, scheme)
     log.append(Step("measure", f"symbol rate {rs:.3f} Bd, roll-off {beta:.2f}, CFO {cfo:.2f} Hz", "measured",
                     {"timing_fit_hz": rs, "rolloff_psd": beta, "cfo_hz": cfo}))
-    return search_structure(x, fs, (ys, sps, t0, cfo, theta), rs, beta, log, led)
+    return search_structure(x, fs, (ys, sps, t0, cfo, theta), rs, beta, log, led, scheme=scheme)
 
 
-def measure_phy(x, fs):
-    """QPSK front-end of the search: (symbols, sps, t0, cfo, theta, symbol rate, roll-off)."""
+def measure_phy(x, fs, scheme: str = "qpsk"):
+    """PSK front-end of the search: (symbols, sps, t0, cfo, theta, symbol rate, roll-off)."""
     rs0 = symbol_rate_blind(x, fs)
-    cfo0 = cfo_power(x, fs, 4)
+    M = ROT_ORDER[scheme]
+    cfo0 = cfo_power(x, fs, M)
     beta = round(rolloff_psd(x, fs, rs0, cfo0), 2)
-    ys, sps, t0, cfo, theta = symbols(x, fs, fs / rs0, beta)
+    ys, sps, t0, cfo, theta = symbols(x, fs, fs / rs0, beta, M=M, ref_phase=vv_ref_phase(scheme))
     return ys, sps, t0, cfo, theta, fs / sps, beta
 
 
-def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
+def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None, scheme: str = "qpsk"):
     """Frame, code, interleaver, scrambler and fields from a derotated symbol stream. x may be None when the
     stream is pooled from several captures (stitch.py); slot_of(starts) then maps frame starts to frame slots,
     with a negative step where one capture ends and the next begins (the gap between them is unknown)."""
     ys, sps, t0, cfo, theta = pre
+    rot_step = 2 * np.pi / ROT_ORDER[scheme]                            # residual carrier ambiguity left by symbols()
     # 3 FRAME / SYNC -------------------------------------------------------------------------------------------
     fr = discover_frames(ys)
     if fr is None:
@@ -150,21 +170,25 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
                 c = seg @ np.conj(tmpl)
                 keep = np.abs(c) / (np.linalg.norm(seg, axis=1) * np.linalg.norm(tmpl) + 1e-12) > 0.5
                 if keep.sum() >= 3:
-                    rot = np.round(np.angle(c[keep]) / (np.pi / 2)) * (np.pi / 2)
+                    rot = np.round(np.angle(c[keep]) / rot_step) * rot_step
                     yield L, o, tmpl, (np.stack([ys[s: s + P] for s in starts[keep]]) * np.exp(-1j * rot)[:, None])[:, L:]
 
     def phase_hyps(h):
+        # QPSK: a k*90deg rotation aliases exactly to a fixed I/Q-bit-pair swap (its Gray mapping's own
+        # geometry), so only the matching k per swap state is tried - that coupling is QPSK-specific and is
+        # NOT assumed for any other scheme (see module docstring); BPSK has no swap concept at all (1 bit/symbol,
+        # a pi rotation just complements every bit, which cancels under identify_code's frame-differencing).
         for conj in (False, True):
-            for k in range(4):
-                if (k % 2 == 1) == h.swap:                         # chain model has no I/Q-bit swap
-                    yield conj, k, (lambda cj, kk: lambda z: (np.conj(z) if cj else z) * np.exp(1j * kk * np.pi / 2))(conj, k)
+            for k in range(ROT_ORDER[scheme]):
+                if scheme != "qpsk" or (k % 2 == 1) == h.swap:
+                    yield conj, k, (lambda cj, kk: lambda z: (np.conj(z) if cj else z) * np.exp(1j * kk * rot_step))(conj, k)
 
     # Pass 1: find the code, geometry, scrambler polynomials and phase hypotheses at the first alignment where
     # everything fits (library scramblers in a first sweep, exhaustive low degree in a second).
     hs, polys, phases, codes = [], [], set(), {}
     for exhaustive in (0, 8):
         for L, o, tmpl, body in alignments():
-            nc = 2 * body.shape[1]
+            nc = BPS[scheme] * body.shape[1]
             seen[0] = max(seen[0], body.shape[0])
             if nc not in codes:                                    # the code is ~shift-invariant: once per length
                 ident = next((v for v in codes.values() if v and v[0].rows in (1, v[0].rows * v[0].cols)), None)
@@ -172,7 +196,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
                     codes[nc] = [CodeHypothesis(h.swap, 1, nc, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
                                  for h in ident]
                 else:
-                    allh = identify_code(_qpsk_bits(body))
+                    allh = identify_code(_hard_bits(scheme, body))
                     for h in allh:
                         if h.bias / h.noise_level > best_z[0]:
                             best_z[:] = [h.bias / h.noise_level, body.shape[0]]
@@ -180,7 +204,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
             for h in codes[nc]:
                 ch = CodeHypothesis(False, h.rows, h.cols, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
                 for conj, k, tf in phase_hyps(h):
-                    sc = solve_scrambler(_qpsk_bits(tf(body)), ch, exhaustive, library=not exhaustive)
+                    sc = solve_scrambler(_hard_bits(scheme, tf(body)), ch, exhaustive, library=not exhaustive)
                     if sc:
                         phases.add((conj, k))
                         if sc[1] and (sc[0], sc[1]) not in polys:
@@ -214,7 +238,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
     viable = []
     for L, o, tmpl, body in alignments():
         for h in hs:
-            nc = 2 * body.shape[1]
+            nc = BPS[scheme] * body.shape[1]
             if h.rows in (1, h.rows * h.cols):                    # identity geometry fits any block length
                 h = CodeHypothesis(h.swap, 1, nc, h.K, h.generators_octal, h.bias, h.noise_level, h.runner_up)
             elif h.rows * h.cols != nc:
@@ -223,7 +247,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
             for conj, k, tf in phase_hyps(h):
                 if (conj, k) not in phases:
                     continue                                       # phases are shared by every alignment
-                bits = _qpsk_bits(tf(body))
+                bits = _hard_bits(scheme, tf(body))
                 sc = solve_scrambler(bits, ch, 0, polys, library=False)
                 if sc:
                     edge = edge_violations(bits, ch, sc[1], sc[2])
@@ -239,7 +263,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
     # structure decides (an inverted counter decrements), and the loser is recorded as an equivalence.
     scored = []
     for key, h, L, tmpl, body, conj, k, sc, tf in tied:
-        recipe, info_log = _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, h, sc, tf, slot_of)
+        recipe, info_log = _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, h, sc, tf, slot_of, scheme)
         f = recipe.framing
         score = (f.crc is not None) + any(fd.kind == "counter" for fd in f.fields) + recipe.fec.terminated
         scored.append((score, -key[1], recipe, info_log, h, L, conj, k, sc))
@@ -252,7 +276,7 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
                     "blind", {"bias": code.bias, "noise_level": code.noise_level, "runner_up_geometry": code.runner_up}))
     log.append(Step("scrambler", "none" if not sexps else f"{sname}: poly exponents {sexps}, seed 0x{sseed:X}",
                     "blind" if sname.startswith("blind") else "library",
-                    {"inconsistent_checks": sbad, "phase_rot_deg": 90 * k, "conj": conj,
+                    {"inconsistent_checks": sbad, "phase_rot_deg": round(np.degrees(rot_step * k)), "conj": conj,
                      "equivalent_phase_hypotheses": len(tied), "structure_score": score}))
     log.extend(info_log)
     z, F = best_z
@@ -266,27 +290,28 @@ def search_structure(x, fs, pre, rs, beta, log, led, slot_of=None):
         led.add("Code and interleaver", "decided", code_ev)
     led.add("Scrambler", "decided", "none" if not sexps else f"{sname}, seed 0x{sseed:X}")
     led.add("Frame structure", "decided", ", ".join(f.name for f in recipe.framing.fields))
-    led.resolve("Modulation order", "QPSK: the symbols decode under the QPSK code (the layered proof decides next)")
+    led.resolve("Modulation order", f"{scheme.upper()}: the symbols decode under the {scheme.upper()} code (the layered proof decides next)")
     return recipe, log
 
 
-def _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, code, sc, tf, slot_of=None):
+def _assemble(x, fs, ys, sps, t0, cfo, theta, rs, beta, P, L, tmpl, code, sc, tf, slot_of=None, scheme: str = "qpsk"):
     """Build the recipe for one hypothesis: decode under a provisional framing, detect termination,
     then let Bit-Lens find the fields and the CRC."""
     sname, sexps, sseed, _ = sc
     scr = Scrambler(poly_exponents=sexps, seed=sseed) if sexps else None
-    asm_hex = np.packbits(_qpsk_bits(tf(tmpl)[None])[0]).tobytes().hex().upper()
-    T = P - L                                                      # symbols per coded block = code steps (rate 1/2)
+    asm_hex = np.packbits(_qpsk_bits(tf(tmpl)[None])[0]).tobytes().hex().upper()      # ASM is always QPSK (chain.py)
+    T = P - L                                                      # symbols per coded block
+    raw_bits = T * BPS[scheme] // 2                                # rate-1/2 code, before any termination tail
     fec = ConvCode(K=code.K, generators_octal=code.generators_octal, terminated=False)
-    base = Recipe(sample_rate_hz=fs, modulation=Modulation(scheme="qpsk", symbol_rate_hz=rs, rolloff=beta), fec=fec,
+    base = Recipe(sample_rate_hz=fs, modulation=Modulation(scheme=scheme, symbol_rate_hz=rs, rolloff=beta), fec=fec,
                   interleaver=Interleaver(rows=code.rows, cols=code.cols), scrambler=scr,
-                  framing=Framing(asm_hex=asm_hex, fields=[Field(name="data", bits=T, kind="payload")]))
+                  framing=Framing(asm_hex=asm_hex, fields=[Field(name="data", bits=raw_bits, kind="payload")]))
     pre = (ys, sps, t0, cfo, theta)
     info = unwrap(frontend(x, base, pre=pre), base).info
     term = bool((info[:, -(code.K - 1):] == 0).all(1).mean() >= 0.9)
     if term:
         base = base.model_copy(update={"fec": fec.model_copy(update={"terminated": True}),
-                                       "framing": base.framing.model_copy(update={"fields": [Field(name="data", bits=T - code.K + 1, kind="payload")]})})
+                                       "framing": base.framing.model_copy(update={"fields": [Field(name="data", bits=raw_bits - code.K + 1, kind="payload")]})})
     fe = frontend(x, base, pre=pre)
     info = unwrap(fe, base).info
     fields, crc = lens_fields(info, slot_of(fe.starts) if slot_of else (fe.starts - fe.starts[0]) // fe.period)

@@ -10,11 +10,13 @@ from ..pipeline import FrontEnd, Unwrapped, frontend, unwrap
 from ..chain import encode_frames, shape
 from ..dsp import rotate
 from ..coding import syndrome_rate_half, check_weight
+from ..demod import BPS
 
 CALIBRATION_ID = "v0-defaults"
 TH = dict(eta_min=0.97, delta_db=0.5, tost_z=1.645, t3_gamma=13.8, t4_sigmas=5.0, t4_floor=0.01,
           kurt_floor=0.05, k1_null_z=8.0, k1_sigmas=6.0, k1_floor=0.002, k2_coverage=0.99, k2_snr_u_db=0.5,
-          s1_min_frac=0.9, s2_max_p=1e-9, s3_min_frac=0.9, noise_win=1024, noise_min_windows=4, gain_block=2048)
+          s1_min_frac=0.9, s2_max_p=1e-9, s3_min_frac=0.9, noise_win=1024, noise_min_windows=4, gain_block=2048,
+          ldpc_max_unconverged_frac=0.05)
 
 
 @dataclass
@@ -129,7 +131,7 @@ def _coding_layer_rs(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdic
     channel explains); RS2 is the same corrections-consistency check as conv's K2, reused verbatim."""
     fec = recipe.fec
     esn0 = 10 ** (fe.esn0_db / 10)
-    p = float(norm.sf(np.sqrt(esn0)))                              # per-bit hard-decision error probability
+    p = float(norm.sf(np.sqrt(2 * esn0 / BPS[recipe.modulation.scheme])))     # per-bit hard-decision error probability
     p_sym = 1 - (1 - p) ** fec.m
     t = (fec.n - fec.k) // 2
     F = uw.fec_ok.size
@@ -140,7 +142,9 @@ def _coding_layer_rs(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdic
     bad_lo, bad_hi = float(binom.ppf(q, F, pb)), float(binom.ppf(1 - q, F, pb))
     nc, nb = int((uw.hard != uw.reencoded).sum()), uw.hard.size
     u = TH["k2_snr_u_db"]
-    p_lo, p_hi = norm.sf(np.sqrt(esn0 * 10 ** (u / 10))), norm.sf(np.sqrt(esn0 * 10 ** (-u / 10)))
+    bps = BPS[recipe.modulation.scheme]
+    p_lo = norm.sf(np.sqrt(2 * esn0 * 10 ** (u / 10) / bps))
+    p_hi = norm.sf(np.sqrt(2 * esn0 * 10 ** (-u / 10) / bps))
     c_lo, c_hi = float(binom.ppf(q, nb, p_lo)), float(binom.ppf(1 - q, nb, p_hi))
     fails = []
     if not (bad_lo <= n_bad <= bad_hi):
@@ -154,22 +158,59 @@ def _coding_layer_rs(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdic
                         calibration_id=CALIBRATION_ID)
 
 
+def _coding_layer_ldpc(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict:
+    """LDPC analogue: LDPC1 is K2's corrections-consistency check (hard vs reencoded bits, channel-BER based -
+    code-family-agnostic); LDPC2 is a coarse, uncalibrated cap on the fraction of frames whose min-sum BP
+    never converged to a valid codeword (belief propagation has no simple closed-form 'corrects up to t errors'
+    guarantee the way RS/conv do, so this is a first-cut gate, not a calibrated statistical test)."""
+    esn0 = 10 ** (fe.esn0_db / 10)
+    bps = BPS[recipe.modulation.scheme]
+    nc, nb = int((uw.hard != uw.reencoded).sum()), uw.hard.size
+    u = TH["k2_snr_u_db"]
+    p_lo = norm.sf(np.sqrt(2 * esn0 * 10 ** (u / 10) / bps))
+    p_hi = norm.sf(np.sqrt(2 * esn0 * 10 ** (-u / 10) / bps))
+    q = (1 - TH["k2_coverage"]) / 2
+    c_lo, c_hi = float(binom.ppf(q, nb, p_lo)), float(binom.ppf(1 - q, nb, p_hi))
+    F = uw.fec_ok.size
+    n_bad = int((~uw.fec_ok).sum())
+    fails = []
+    if not c_lo <= nc <= c_hi:
+        fails.append("LDPC1 decoder corrections inconsistent with the channel error rate")
+    if n_bad / F > TH["ldpc_max_unconverged_frac"]:
+        fails.append("LDPC2 too many frames failed to converge to a valid codeword")
+    return LayerVerdict(layer="coding", verdict="fail" if fails else "pass", reason="; ".join(fails) or None,
+                        stats={"LDPC1_corrections": float(nc), "LDPC1_lo": c_lo, "LDPC1_hi": c_hi,
+                               "LDPC2_unconverged": float(n_bad), "LDPC2_frames": float(F)},
+                        thresholds={"K2_coverage": TH["k2_coverage"], "LDPC2_max_frac": TH["ldpc_max_unconverged_frac"]},
+                        calibration_id=CALIBRATION_ID)
+
+
 def coding_layer(recipe: Recipe, fe: FrontEnd, uw: Unwrapped) -> LayerVerdict:
     fec = recipe.fec
     if fec.family == "rs":
         return _coding_layer_rs(recipe, fe, uw)
-    gens = tuple(fec.generators_octal)
-    s = syndrome_rate_half(uw.hard, fec.K, gens)
+    if fec.family == "ldpc":
+        return _coding_layer_ldpc(recipe, fe, uw)
+    # concat: K1/K2 test the inner conv code (the code that actually shaped uw.hard/uw.reencoded); the outer
+    # RS layer's own correctness shows up in uw.fec_ok / the CRC, not in a second statistical test here.
+    inner = fec.inner if fec.family == "concat" else fec
+    gens = tuple(inner.generators_octal)
+    s = syndrome_rate_half(uw.hard, inner.K, gens)
     N, f = s.size, float(s.mean())
-    w = check_weight(fec.K, gens)
+    w = check_weight(inner.K, gens)
     esn0 = 10 ** (fe.esn0_db / 10)
-    p = float(norm.sf(np.sqrt(esn0)))                              # Gray QPSK per-bit error probability
+    # exact Gray-bit error probability for BPSK/QPSK (Q(sqrt(2 Eb/N0)), Eb/N0 = Es/N0 / bits-per-symbol); the
+    # same formula is used as an approximation for 8PSK/16QAM/64QAM (not exact there - narrower scope than the
+    # rest of the proof, unchanged from before this was made scheme-aware)
+    p = float(norm.sf(np.sqrt(2 * esn0 / BPS[recipe.modulation.scheme])))
     f0 = (1 - (1 - 2 * p) ** w) / 2
     z_null = (0.5 - f) / np.sqrt(0.25 * w / N)
     lim = f0 + TH["k1_sigmas"] * np.sqrt(max(f0, 1 / N) * (1 - f0) * w / N) + TH["k1_floor"]
     nc, nb = int((uw.hard != uw.reencoded).sum()), uw.hard.size
     u = TH["k2_snr_u_db"]
-    p_lo, p_hi = norm.sf(np.sqrt(esn0 * 10 ** (u / 10))), norm.sf(np.sqrt(esn0 * 10 ** (-u / 10)))
+    bps = BPS[recipe.modulation.scheme]
+    p_lo = norm.sf(np.sqrt(2 * esn0 * 10 ** (u / 10) / bps))
+    p_hi = norm.sf(np.sqrt(2 * esn0 * 10 ** (-u / 10) / bps))
     q = (1 - TH["k2_coverage"]) / 2
     c_lo, c_hi = float(binom.ppf(q, nb, p_lo)), float(binom.ppf(1 - q, nb, p_hi))
     fails = []
@@ -243,15 +284,19 @@ def near_miss_battery(x: np.ndarray, recipe: Recipe, fe: FrontEnd) -> list[NearM
         ("phy", f"roll-off {max(0.05, mo.rolloff - 0.1):.2f}", {"modulation": mo.model_copy(update={"rolloff": round(max(0.05, mo.rolloff - 0.1), 3)})}),
         ("coding", f"interleaver transposed {il.cols}x{il.rows}", {"interleaver": il.model_copy(update={"rows": il.cols, "cols": il.rows})}),
     ]
-    if fec.family != "rs":
-        g = fec.generators_octal
+    if fec.family in ("conv", "concat"):
+        target = fec.inner if fec.family == "concat" else fec
+        g = target.generators_octal
+        swapped = target.model_copy(update={"generators_octal": g[::-1]})
+        neighbour = target.model_copy(update={"generators_octal": ["171", "135"] if g != ["171", "135"] else ["171", "133"]})
+        wrap = (lambda t: {"fec": fec.model_copy(update={"inner": t})}) if fec.family == "concat" else (lambda t: {"fec": t})
         cands += [
-            ("coding", "generators swapped", {"fec": fec.model_copy(update={"generators_octal": g[::-1]})}),
-            ("coding", "generator neighbour (171,135)" if g != ["171", "135"] else "generator neighbour (171,133)",
-             {"fec": fec.model_copy(update={"generators_octal": ["171", "135"] if g != ["171", "135"] else ["171", "133"]})}),
+            ("coding", "generators swapped", wrap(swapped)),
+            ("coding", "generator neighbour (171,135)" if g != ["171", "135"] else "generator neighbour (171,133)", wrap(neighbour)),
         ]
     # RS-specific near-misses (wrong n/k/m) change coded_len and info_bits together, needing a framing rebuild
-    # to stay geometry-consistent -- left for the RS calibration pass rather than risked here.
+    # to stay geometry-consistent -- left for the RS calibration pass rather than risked here (applies to concat's
+    # outer code too).
     if sc is not None:
         cands.append(("structure", "scrambler seed shifted", {"scrambler": sc.model_copy(update={"seed": sc.seed ^ 1})}))
     if cr is not None:
