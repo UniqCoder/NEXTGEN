@@ -5,7 +5,7 @@ import numpy as np
 from .recipe import Recipe
 from .kernels import conv_encode
 from .coding import block_interleave, lfsr_sequence
-from .demod import map_qpsk
+from .demod import map_qpsk, map_symbols, BPS
 from .dsp import synth_at
 
 
@@ -52,7 +52,7 @@ def encode_frames(recipe: Recipe, info: np.ndarray) -> dict[str, np.ndarray]:
     coded = conv_encode(u, fec.K, tuple(fec.generators_octal))
     inter = block_interleave(coded, il.rows, il.cols)
     scr = inter ^ scrambler_seq(recipe, inter.shape[1])[None]
-    body = map_qpsk(scr)
+    body = map_symbols(recipe.modulation.scheme, scr)
     asm = np.broadcast_to(asm_symbols(recipe), (info.shape[0], asm_symbols(recipe).size))
     return {"coded": coded, "interleaved": inter, "scrambled": scr, "symbols": np.concatenate([asm, body], 1)}
 
